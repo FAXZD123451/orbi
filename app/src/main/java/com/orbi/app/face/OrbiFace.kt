@@ -25,7 +25,9 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.withTransform
+import com.orbi.app.Cue
+import com.orbi.app.CueType
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
@@ -55,6 +57,8 @@ enum class Expression {
     WINK,
     /** Ojos pequeños y temblando: le tapaste la cámara. */
     SCARED,
+    /** Ojos a medio cerrar: el cuarto está a oscuras o le está dando sueño. */
+    DROWSY,
 }
 
 /*
@@ -73,6 +77,8 @@ private data class EyeShape(
     val tilt: Float = 0f,
     /** Fracción del ojo que se tapa desde abajo (feliz = media luna). */
     val cutBottom: Float = 0f,
+    /** Fracción del ojo que se tapa desde arriba (párpado caído = sueño). */
+    val cutTop: Float = 0f,
 )
 
 private data class MouthShape(
@@ -95,6 +101,7 @@ private fun eyeFor(e: Expression) = when (e) {
     Expression.SCARED -> EyeShape(w = 0.09f, h = 0.12f, radius = 0.045f)
     Expression.DIZZY -> EyeShape(w = 0.14f, h = 0.14f, radius = 0.07f)
     Expression.SLEEPING -> EyeShape(w = 0.15f, h = 0.028f, radius = 0.014f)
+    Expression.DROWSY -> EyeShape(w = 0.14f, h = 0.2f, radius = 0.05f, cutTop = 0.55f)
 }
 
 private fun mouthFor(e: Expression) = when (e) {
@@ -109,6 +116,7 @@ private fun mouthFor(e: Expression) = when (e) {
     Expression.TALKING -> MouthShape(w = 0.11f, open = 0.06f)
     Expression.DIZZY -> MouthShape(w = 0.12f)
     Expression.SLEEPING -> MouthShape(w = 0.05f)
+    Expression.DROWSY -> MouthShape(w = 0.06f, curve = -0.005f)
 }
 
 private val NO_BLINK = setOf(
@@ -123,6 +131,7 @@ private val NO_BLINK = setOf(
  * @param zoom agranda ojos y boca respecto al marco (en la burbuja conviene > 1).
  * @param headTilt inclinación de la cara en grados (imita la de tu cabeza).
  * @param winkSide qué ojo cierra en el guiño: -1 izquierdo, 1 derecho.
+ * @param cue movimiento de cabeza que se dispara una vez (asentir o negar).
  */
 @Composable
 fun OrbiFace(
@@ -133,6 +142,7 @@ fun OrbiFace(
     zoom: Float = 1f,
     headTilt: Float = 0f,
     winkSide: Int = 1,
+    cue: Cue? = null,
     color: Color = Color.White,
 ) {
     val eye = eyeFor(expression)
@@ -144,6 +154,8 @@ fun OrbiFace(
     val eyeR by animateFloatAsState(eye.radius, spec, label = "eyeR")
     val tilt by animateFloatAsState(eye.tilt, spec, label = "tilt")
     val cut by animateFloatAsState(eye.cutBottom, spec, label = "cut")
+    // El párpado baja lento (sueño) y sube más rápido.
+    val cutTop by animateFloatAsState(eye.cutTop, tween(if (eye.cutTop > 0f) 700 else 250), label = "cutTop")
     val mouthW by animateFloatAsState(mouth.w, spec, label = "mouthW")
     val curve by animateFloatAsState(mouth.curve, spec, label = "curve")
     val open by animateFloatAsState(mouth.open, spec, label = "open")
@@ -155,6 +167,49 @@ fun OrbiFace(
         if (expression == Expression.WINK && winkSide < 0) 0.1f else 1f, tween(110), label = "winkL")
     val winkR by animateFloatAsState(
         if (expression == Expression.WINK && winkSide > 0) 0.1f else 1f, tween(110), label = "winkR")
+
+    // ---- Transiciones con personalidad: todo el cuerpo reacciona al cambiar de expresión ----
+    val hopY = remember { Animatable(0f) }     // desplazamiento vertical (fracción de u)
+    val jitterX = remember { Animatable(0f) }  // temblor horizontal
+    val pop = remember { Animatable(1f) }      // escala
+    LaunchedEffect(expression) {
+        when (expression) {
+            Expression.HAPPY, Expression.WINK -> {          // saltito de alegría
+                hopY.animateTo(-0.04f, tween(110))
+                hopY.animateTo(0f, spring(dampingRatio = 0.35f, stiffness = 500f))
+            }
+            Expression.ANGRY -> repeat(3) {                  // tiembla de rabia
+                jitterX.animateTo(0.018f, tween(35))
+                jitterX.animateTo(-0.018f, tween(35))
+            }.also { jitterX.animateTo(0f, tween(35)) }
+            Expression.SURPRISED -> {                        // "¡pop!"
+                pop.animateTo(1.1f, tween(90))
+                pop.animateTo(1f, spring(dampingRatio = 0.4f, stiffness = 400f))
+            }
+            else -> Unit
+        }
+    }
+    // Se encoge de miedo y se "desinfla" de tristeza mientras dure.
+    val shrink by animateFloatAsState(if (expression == Expression.SCARED) 0.88f else 1f, spring(0.6f, 300f), label = "shrink")
+    val droop by animateFloatAsState(
+        when (expression) { Expression.SAD -> 0.03f; Expression.DROWSY -> 0.02f; else -> 0f }, tween(500), label = "droop")
+
+    // Asentir / negar con la cabeza (cuando tú lo haces).
+    val nodY = remember { Animatable(0f) }
+    val headShakeX = remember { Animatable(0f) }
+    LaunchedEffect(cue?.id) {
+        when (cue?.type) {
+            CueType.NOD -> repeat(2) {
+                nodY.animateTo(0.05f, tween(140))
+                nodY.animateTo(-0.01f, tween(140))
+            }.also { nodY.animateTo(0f, tween(120)) }
+            CueType.HEAD_SHAKE -> repeat(2) {
+                headShakeX.animateTo(0.05f, tween(130))
+                headShakeX.animateTo(-0.05f, tween(130))
+            }.also { headShakeX.animateTo(0f, tween(110)) }
+            null -> Unit
+        }
+    }
 
     // Parpadeo a intervalos irregulares.
     val blink = remember { Animatable(1f) }
@@ -204,8 +259,14 @@ fun OrbiFace(
         val lookOffset = (look + glance.value) * (0.045f * u) + Offset(shakeX, 0f)
         // Mareado: toda la cara se balancea un poco.
         val sway = wobble * dizzy * 8f
+        val bodyOffset = Offset((jitterX.value + headShakeX.value) * u, (hopY.value + nodY.value + droop) * u)
+        val bodyScale = pop.value * shrink
 
-        rotate(tiltDeg + sway, center) {
+        withTransform({
+            translate(bodyOffset.x, bodyOffset.y)
+            scale(bodyScale, bodyScale, center)
+            rotate(tiltDeg + sway, center)
+        }) {
             val eyeY = center.y - 0.05f * u + float
             val dx = 0.17f * u
             val eyeColor = color.copy(alpha = color.alpha * (1f - dizzy))
@@ -217,7 +278,7 @@ fun OrbiFace(
                     drawEye(
                         c = c, side = side,
                         w = eyeW * u, h = eyeH * u * blink.value * wink, r = eyeR * u,
-                        tilt = tilt, cut = cut, pad = 0.03f * u, color = eyeColor,
+                        tilt = tilt, cut = cut, cutTop = cutTop, pad = 0.03f * u, color = eyeColor,
                     )
                 }
                 if (dizzy > 0.01f) {
@@ -246,7 +307,7 @@ fun OrbiFace(
 }
 
 private fun DrawScope.drawEye(
-    c: Offset, side: Int, w: Float, h: Float, r: Float, tilt: Float, cut: Float, pad: Float, color: Color,
+    c: Offset, side: Int, w: Float, h: Float, r: Float, tilt: Float, cut: Float, cutTop: Float, pad: Float, color: Color,
 ) {
     val top = c.y - h / 2
     val left = c.x - w / 2
@@ -274,6 +335,10 @@ private fun DrawScope.drawEye(
 
     if (cut > 0.001f) {
         drawRect(Color.Black, Offset(left - pad, c.y + h / 2 - cut * h), Size(w + 2 * pad, cut * h + pad))
+    }
+    if (cutTop > 0.001f) {
+        // Párpado: un borde recto que tapa la parte de arriba del ojo.
+        drawRect(Color.Black, Offset(left - pad, top - pad), Size(w + 2 * pad, cutTop * h + pad))
     }
 }
 

@@ -15,6 +15,7 @@ class OrbiApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        Prefs.init(this)
         MoodEngine.start()
         MotionSense.start(this)
 

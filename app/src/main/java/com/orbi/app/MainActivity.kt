@@ -1,7 +1,16 @@
 package com.orbi.app
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Intent
+import android.os.PowerManager
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import com.orbi.app.onboarding.OnboardingScreen
+import com.orbi.app.onboarding.OnboardingStep
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -65,30 +74,46 @@ class MainActivity : ComponentActivity() {
             BubbleService.refresh(this)
         }
 
+    /** Sube cada vez que la app vuelve al frente (para revisar permisos dados en Ajustes). */
+    private var resumeTick by mutableIntStateOf(0)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        askPermissions()
 
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
-                HomeScreen(
-                    onToggleBubble = ::toggleBubble,
-                    onNightMode = { startActivity(Intent(this, NightActivity::class.java)) },
-                    onToggleTracking = ::setTracking,
-                    onNotificationAccess = {
-                        startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
-                    },
-                )
+                var onboarded by remember { mutableStateOf(Prefs.onboarded) }
+                if (!onboarded) {
+                    OnboardingScreen(onboardingSteps(), resumeTick) {
+                        Prefs.onboarded = true
+                        onboarded = true
+                    }
+                } else {
+                    HomeScreen(
+                        onToggleBubble = ::toggleBubble,
+                        onNightMode = { startActivity(Intent(this, NightActivity::class.java)) },
+                        onToggleTracking = ::setTracking,
+                        onNotificationAccess = {
+                            startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                        },
+                        onShowWelcome = { onboarded = false },
+                    )
+                }
             }
         }
     }
 
     override fun onResume() {
         super.onResume()
+        resumeTick++
         MoodEngine.onAppOpened()
         FaceTracker.acquire(this, this)
         OrbiState.notificationsAllowed.value = NotificationWatcher.isAllowed(this)
+        // Si la burbuja estaba abierta y Android la cerró, vuelve al abrir la app (ya con cámara).
+        if (Prefs.bubbleWanted && !OrbiState.bubbleVisible.value && Settings.canDrawOverlays(this)) {
+            BubbleService.start(this)
+        }
     }
 
     override fun onPause() {
@@ -96,13 +121,79 @@ class MainActivity : ComponentActivity() {
         super.onPause()
     }
 
-    private fun askPermissions() {
-        val wanted = buildList {
-            add(Manifest.permission.CAMERA)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) add(Manifest.permission.POST_NOTIFICATIONS)
-        }.filter { ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED }
-        if (wanted.isNotEmpty()) permissions.launch(wanted.toTypedArray())
-    }
+    private fun granted(permission: String) =
+        ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
+
+    private fun ignoresBatteryOptimizations() =
+        getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(packageName)
+
+    /** Los pasos de la bienvenida, cada uno con su permiso y la explicación de para qué sirve. */
+    @SuppressLint("BatteryLife")
+    private fun onboardingSteps() = listOf(
+        OnboardingStep(
+            title = "¡Hola! Soy Orbi",
+            body = "Voy a vivir en tu pantalla. Puedo seguirte con la mirada, reaccionar cuando me tocas " +
+                "o me sacudes, y acompañarte de noche. Para eso necesito unos permisos; te explico cada uno.",
+        ),
+        OnboardingStep(
+            title = "Para mirarte",
+            body = "Uso la cámara frontal para saber dónde estás, si sonríes o si me guiñas un ojo. " +
+                "Todo se procesa en tu celular: no guardo ni envío imágenes.",
+            actionLabel = "Permitir cámara",
+            isDone = { granted(Manifest.permission.CAMERA) },
+            action = { permissions.launch(arrayOf(Manifest.permission.CAMERA)) },
+        ),
+        OnboardingStep(
+            title = "Para quedarme contigo",
+            body = "Android exige una notificación fija cuando una app sigue activa en segundo plano. " +
+                "Desde ahí también puedes ocultarme.",
+            actionLabel = "Permitir notificaciones",
+            isDone = {
+                Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || granted(Manifest.permission.POST_NOTIFICATIONS)
+            },
+            action = {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    permissions.launch(arrayOf(Manifest.permission.POST_NOTIFICATIONS))
+                }
+            },
+        ),
+        OnboardingStep(
+            title = "Para flotar sobre tus apps",
+            body = "Así puedo estar en una burbuja mientras usas otras apps. En Ajustes, busca Orbi y " +
+                "activa \"Mostrar sobre otras apps\". Luego vuelve aquí.",
+            actionLabel = "Abrir Ajustes",
+            isDone = { Settings.canDrawOverlays(this) },
+            action = {
+                startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, "package:$packageName".toUri()))
+            },
+        ),
+        OnboardingStep(
+            title = "Para que no me duerman",
+            body = "Algunos celulares cierran las apps en segundo plano para ahorrar batería. " +
+                "Si me dejas fuera de ese ahorro, no desapareceré de tu pantalla.",
+            actionLabel = "No optimizar a Orbi",
+            isDone = { ignoresBatteryOptimizations() },
+            action = {
+                startActivity(
+                    Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, "package:$packageName".toUri())
+                )
+            },
+        ),
+        OnboardingStep(
+            title = "Para enterarme de tus mensajes",
+            body = "Si quieres, me sorprendo cuando te llega una notificación. Solo sé que llegó algo: " +
+                "no leo de quién es ni qué dice. Es opcional.",
+            actionLabel = "Activar",
+            optional = true,
+            isDone = { NotificationWatcher.isAllowed(this) },
+            action = { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) },
+        ),
+        OnboardingStep(
+            title = "¡Todo listo!",
+            body = "Acaríciame, sacúdeme, lánzame o tápame la cámara para jugar a las escondidas. " +
+                "Y si pones el celular boca abajo, me echo una siesta.",
+        ),
+    )
 
     private fun setTracking(enabled: Boolean) {
         OrbiState.trackingEnabled.value = enabled
@@ -135,6 +226,7 @@ private fun HomeScreen(
     onNightMode: () -> Unit,
     onToggleTracking: (Boolean) -> Unit,
     onNotificationAccess: () -> Unit,
+    onShowWelcome: () -> Unit,
 ) {
     val faceVisible by OrbiState.faceVisible.collectAsState()
     val tracking by OrbiState.trackingEnabled.collectAsState()
@@ -243,5 +335,6 @@ private fun HomeScreen(
             fontSize = 13.sp,
             lineHeight = 20.sp,
         )
+        TextButton(onClick = onShowWelcome) { Text("Ver la bienvenida y los permisos otra vez") }
     }
 }

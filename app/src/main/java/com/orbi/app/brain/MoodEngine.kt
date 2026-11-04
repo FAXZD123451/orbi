@@ -2,6 +2,8 @@ package com.orbi.app.brain
 
 import android.os.SystemClock
 import androidx.compose.ui.geometry.Offset
+import com.orbi.app.Cue
+import com.orbi.app.CueType
 import com.orbi.app.OrbiState
 import com.orbi.app.face.Expression
 import com.orbi.app.sound.Sfx
@@ -184,6 +186,56 @@ object MoodEngine {
         if (wasAsleep) play(Sfx.SURPRISED, Step(Expression.SURPRISED, 600), Step(Expression.HAPPY, 1000))
     }
 
+    /** Pusiste el celular boca abajo: bosteza y se echa una siesta. */
+    fun onFaceDown() {
+        touch()
+        play(Sfx.YAWN, Step(Expression.DROWSY, 900))
+    }
+
+    /** Lo levantaste: se despierta sorprendido y contento. */
+    fun onPickedUp() {
+        touch()
+        play(Sfx.SURPRISED, Step(Expression.SURPRISED, 600), Step(Expression.HAPPY, 1200))
+    }
+
+    /** Apagaste la luz del cuarto: le da sueño. */
+    fun onLightsOff() {
+        if (OrbiState.faceDown.value) return
+        play(Sfx.YAWN, Step(Expression.DROWSY, 1500))
+    }
+
+    /** Prendiste la luz: se sorprende (¡qué brillo!). */
+    fun onLightsOn() {
+        if (OrbiState.faceDown.value) return
+        touch()
+        play(Sfx.SURPRISED, Step(Expression.SURPRISED, 700), Step(Expression.NEUTRAL, 400))
+    }
+
+    /** Asentiste con la cabeza: "¡sí!". Orbi asiente también. */
+    fun onNod() {
+        touch()
+        cue(CueType.NOD)
+        play(Sfx.HAPPY, Step(Expression.HAPPY, 1300))
+    }
+
+    /** Negaste con la cabeza: "no". Orbi niega también, un poco triste. */
+    fun onHeadShake() {
+        touch()
+        cue(CueType.HEAD_SHAKE)
+        play(null, Step(Expression.SAD, 1400))
+    }
+
+    private var cueId = 0L
+    private fun cue(type: CueType) {
+        OrbiState.cue.value = Cue(type, ++cueId)
+    }
+
+    /** Se alegra por algo (por ejemplo, avanzar en la bienvenida). No cuenta como "toque". */
+    fun cheer() {
+        touch()
+        play(Sfx.HAPPY, Step(Expression.HAPPY, 1000))
+    }
+
     fun onCharging() {
         touch()
         play(Sfx.HAPPY, Step(Expression.SURPRISED, 400), Step(Expression.HAPPY, 2000))
@@ -209,8 +261,8 @@ object MoodEngine {
 
         if (reaction == null && expression == Expression.NEUTRAL && t >= nextIdleMood) idleMood()
         if (OrbiState.expression.value != expression) {
-            if (expression == Expression.SLEEPING && !OrbiState.nightMode.value &&
-                OrbiState.expression.value != Expression.SLEEPING) SoundFx.play(Sfx.YAWN)
+            if (expression == Expression.SLEEPING && !OrbiState.nightMode.value && !OrbiState.faceDown.value &&
+                OrbiState.expression.value !in setOf(Expression.SLEEPING, Expression.DROWSY)) SoundFx.play(Sfx.YAWN)
             OrbiState.expression.value = expression
         }
     }
@@ -241,13 +293,16 @@ object MoodEngine {
 
     private fun background(t: Long): Expression {
         if (petting && t - lastPetMove < PET_HOLD_MS) return Expression.PURR
+        if (OrbiState.faceDown.value) return Expression.SLEEPING
         if (coveredSince != 0L) {
             if (t - coveredSince < COVERED_MAX_MS) return Expression.SCARED
             coveredSince = 0L // se cansó de buscarte
         }
         if (OrbiState.nightMode.value) return Expression.SLEEPING
         if (isIdle(t)) return Expression.SLEEPING
+        if (OrbiState.faceVisible.value && OrbiState.mouthOpen.value) return Expression.SURPRISED // te imita
         if (OrbiState.smiling.value) return Expression.HAPPY
+        if (OrbiState.roomDark.value) return Expression.DROWSY
         if (OrbiState.batteryLow.value) return Expression.SAD
         return Expression.NEUTRAL
     }

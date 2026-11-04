@@ -11,7 +11,7 @@ Un asistente robot para Android que vive en tu pantalla. Flota sobre cualquier a
   <img src="docs/despierto.png" width="270" alt="Orbi despierto y feliz" />
 </p>
 
-> **Estado:** v0.1. Cara, burbuja flotante, modo noche, cerebro de emociones, cámara, sensores y sonidos.
+> **Estado:** v0.2. Cara, burbuja flotante, modo noche, cerebro de emociones, cámara, sensores, sonidos y bienvenida guiada.
 
 ## Qué puede hacer
 
@@ -21,6 +21,10 @@ Un asistente robot para Android que vive en tu pantalla. Flota sobre cualquier a
 | Sonríes | Sonríe contigo |
 | Inclinas la cabeza | Inclina la suya igual |
 | Le guiñas un ojo | Te devuelve el guiño |
+| Abres la boca | Se sorprende contigo |
+| Asientes / niegas con la cabeza | Asiente feliz / niega un poco triste |
+| Pones el celular boca abajo | Bosteza y se echa una siesta; al levantarlo, despierta |
+| Apagas la luz del cuarto | Le da sueño (ojos a medio cerrar) |
 | Tapas la cámara | Se asusta y te busca; al destaparla: "¡te encontré!" |
 | Lo tocas | Se alegra (5 toques seguidos: se enoja) |
 | Lo acaricias (mantener y frotar) | Cierra los ojitos y ronronea |
@@ -69,7 +73,7 @@ Permisos que pide: **Mostrar sobre otras apps** (burbuja), **Cámara** (mirada),
 ## Roadmap
 
 - [x] v0.1: cara animada, burbuja, modo noche, cerebro de emociones, cámara, sensores y sonidos
-- [ ] v0.2: bienvenida, preferencias guardadas, boca abajo = dormir, luz del cuarto, gestos con la cara, transiciones con personalidad, ahorro de batería
+- [x] v0.2: bienvenida guiada, preferencias guardadas, posición de la burbuja, vuelve tras reiniciar, boca abajo = siesta, luz del cuarto, boca abierta, sí/no con la cabeza, transiciones con personalidad, modo ahorro de cámara
 - [ ] Voz y cerebro con Claude
 - [ ] Recordatorios y tareas
 - [ ] Leer y responder mensajes (con confirmación)

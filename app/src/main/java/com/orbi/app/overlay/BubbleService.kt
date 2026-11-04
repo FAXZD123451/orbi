@@ -10,6 +10,9 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.content.res.Configuration
+import androidx.core.animation.doOnEnd
+import com.orbi.app.Prefs
 import android.graphics.PixelFormat
 import android.os.Build
 import android.os.Handler
@@ -88,11 +91,13 @@ class BubbleService : Service() {
         super.onCreate()
         wm = getSystemService(WINDOW_SERVICE) as WindowManager
         owner.start()
-        goForeground()
+        val withCamera = goForeground()
         showBubble()
         OrbiState.bubbleVisible.value = true
+        Prefs.bubbleWanted = true
         // Mientras la burbuja exista, Orbi te busca con la cámara aunque estés en otra app.
-        FaceTracker.acquire(this, owner)
+        // (Si Android revivió el servicio en segundo plano, no deja usar la cámara hasta abrir la app.)
+        if (withCamera) FaceTracker.acquire(this, owner)
 
         // En modo noche la cara ocupa toda la pantalla: la burbuja se esconde.
         scope.launch {
@@ -104,14 +109,30 @@ class BubbleService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_STOP -> stopSelf()
+            ACTION_STOP -> closeByUser()
             // Se dio el permiso de cámara o se cambió el seguimiento: actualiza el servicio.
             ACTION_REFRESH -> {
-                goForeground()
-                FaceTracker.acquire(this, owner)
+                if (goForeground()) FaceTracker.acquire(this, owner)
             }
         }
+        // Si Android cierra el servicio por falta de memoria, lo vuelve a crear solo.
         return START_STICKY
+    }
+
+    /** El usuario quitó a Orbi a propósito: no hay que traerlo de vuelta. */
+    private fun closeByUser() {
+        Prefs.bubbleWanted = false
+        stopSelf()
+    }
+
+    /** Al girar la pantalla, la burbuja se reacomoda para no quedar fuera de los bordes. */
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        val view = bubble ?: return
+        bubbleParams.x = bubbleParams.x.coerceIn(0, (screenW - bubbleSize).coerceAtLeast(0))
+        bubbleParams.y = bubbleParams.y.coerceIn(0, (screenH - bubbleSize).coerceAtLeast(0))
+        wm.updateViewLayout(view, bubbleParams)
+        snapToEdge(view)
     }
 
     override fun onDestroy() {
@@ -128,7 +149,8 @@ class BubbleService : Service() {
 
     // ---------- Notificación obligatoria del servicio en primer plano ----------
 
-    private fun goForeground() {
+    /** Arranca el servicio en primer plano. Devuelve si quedó con acceso a la cámara. */
+    private fun goForeground(): Boolean {
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(
             NotificationChannel(CHANNEL_ID, "Orbi en pantalla", NotificationManager.IMPORTANCE_LOW)
@@ -149,16 +171,25 @@ class BubbleService : Service() {
             .setOngoing(true)
             .build()
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            // El tipo "camera" solo se declara si hay permiso; si no, Android cerraría el servicio.
-            var type = ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
-            if (FaceTracker.hasPermission(this) && OrbiState.trackingEnabled.value) {
-                type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
-            }
-            startForeground(NOTIFICATION_ID, notification, type)
-        } else {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(NOTIFICATION_ID, notification)
+            return true
         }
+        val wantsCamera = FaceTracker.hasPermission(this) && OrbiState.trackingEnabled.value
+        if (wantsCamera) {
+            try {
+                startForeground(
+                    NOTIFICATION_ID, notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA,
+                )
+                return true
+            } catch (e: SecurityException) {
+                // Android no deja pedir la cámara si el servicio arrancó en segundo plano
+                // (por ejemplo, al reiniciar el celular). La burbuja sigue, sin cámara.
+            }
+        }
+        startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+        return false
     }
 
     // ---------- Burbuja ----------
@@ -174,9 +205,11 @@ class BubbleService : Service() {
 
     @SuppressLint("ClickableViewAccessibility")
     private fun showBubble() {
+        // Aparece donde la dejaste la última vez (o a la derecha, a un tercio de altura).
+        val saved = Prefs.bubblePosition()
         bubbleParams = overlayParams(bubbleSize, bubbleSize, touchable = true).apply {
-            x = screenW - bubbleSize - margin()
-            y = screenH / 3
+            x = (saved?.first ?: (screenW - bubbleSize - margin())).coerceIn(0, screenW - bubbleSize)
+            y = (saved?.second ?: (screenH / 3)).coerceIn(0, screenH - bubbleSize)
         }
         val view = ComposeView(this).apply {
             owner.attach(this)
@@ -257,6 +290,7 @@ class BubbleService : Service() {
                 bubbleParams.x = it.animatedValue as Int
                 wm.updateViewLayout(view, bubbleParams)
             }
+            doOnEnd { Prefs.saveBubblePosition(bubbleParams.x, bubbleParams.y) }
             start()
         }
     }
@@ -390,7 +424,7 @@ class BubbleService : Service() {
                         val vx = tracker?.xVelocity ?: 0f
                         val vy = tracker?.yVelocity ?: 0f
                         when {
-                            close -> stopSelf()
+                            close -> closeByUser()
                             hypot(vx, vy) > FLING_SPEED * density -> fling(v, vx, vy)
                             else -> snapToEdge(v)
                         }
@@ -430,7 +464,9 @@ class BubbleService : Service() {
             context.startForegroundService(Intent(context, BubbleService::class.java))
         }
 
+        /** El usuario la ocultó desde la app. */
         fun stop(context: Context) {
+            Prefs.bubbleWanted = false
             context.stopService(Intent(context, BubbleService::class.java))
         }
 

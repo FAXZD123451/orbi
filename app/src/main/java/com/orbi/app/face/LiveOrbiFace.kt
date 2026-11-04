@@ -20,6 +20,7 @@ fun LiveOrbiFace(modifier: Modifier = Modifier, zoom: Float = 1f) {
     val headTilt by OrbiState.headTilt.collectAsState()
     val winkSide by OrbiState.winkSide.collectAsState()
     val lookHint by OrbiState.lookHint.collectAsState()
+    val cue by OrbiState.cue.collectAsState()
 
     // Prioridad de la mirada: un aviso (notificación) > tu cara > la gravedad del celular.
     val look = when {
@@ -36,5 +37,6 @@ fun LiveOrbiFace(modifier: Modifier = Modifier, zoom: Float = 1f) {
         zoom = zoom,
         headTilt = if (faceVisible) headTilt else 0f,
         winkSide = winkSide,
+        cue = cue,
     )
 }
