@@ -4,6 +4,9 @@ import androidx.compose.ui.geometry.Offset
 import com.orbi.app.face.Expression
 import kotlinx.coroutines.flow.MutableStateFlow
 
+/** Cómo se muestra Orbi sobre las demás apps. */
+enum class BubbleMode { FLOATING, TOP_BAR }
+
 /** Movimientos de cabeza de Orbi que se disparan una vez (asentir, negar). */
 enum class CueType { NOD, HEAD_SHAKE }
 
@@ -48,5 +51,10 @@ object OrbiState {
     // ---- Preferencias y pantallas ----
     val soundEnabled = MutableStateFlow(true)
     val bubbleVisible = MutableStateFlow(false)
+    val bubbleMode = MutableStateFlow(BubbleMode.FLOATING)
+    /** Lado de la burbuja flotante, en dp. */
+    val floatSizeDp = MutableStateFlow(96f)
+    /** Alto de la barra superior, en dp (incluye la zona de la barra de estado). */
+    val barHeightDp = MutableStateFlow(150f)
     val nightMode = MutableStateFlow(false)
 }

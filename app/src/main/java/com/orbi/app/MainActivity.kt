@@ -9,6 +9,9 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Slider
+import kotlin.math.roundToInt
 import com.orbi.app.onboarding.OnboardingScreen
 import com.orbi.app.onboarding.OnboardingStep
 import android.content.pm.PackageManager
@@ -314,8 +317,45 @@ private fun HomeScreen(
         }
 
         Spacer(Modifier.height(4.dp))
+        // ---- Forma y tamaño de Orbi sobre las demás apps ----
+        val mode by OrbiState.bubbleMode.collectAsState()
+        val floatSize by OrbiState.floatSizeDp.collectAsState()
+        val barHeight by OrbiState.barHeightDp.collectAsState()
+        Text("Forma de Orbi", color = Color.White, fontWeight = FontWeight.Medium)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(
+                selected = mode == BubbleMode.TOP_BAR,
+                onClick = { OrbiState.bubbleMode.value = BubbleMode.TOP_BAR },
+                label = { Text("Barra superior") },
+            )
+            FilterChip(
+                selected = mode == BubbleMode.FLOATING,
+                onClick = { OrbiState.bubbleMode.value = BubbleMode.FLOATING },
+                label = { Text("Burbuja flotante") },
+            )
+        }
+        val isBar = mode == BubbleMode.TOP_BAR
+        Text(
+            if (isBar) "Alto de la barra: ${barHeight.roundToInt()} dp" else "Tamaño de la burbuja: ${floatSize.roundToInt()} dp",
+            color = dim, fontSize = 13.sp,
+        )
+        Slider(
+            value = if (isBar) barHeight else floatSize,
+            onValueChange = {
+                if (isBar) OrbiState.barHeightDp.value = it else OrbiState.floatSizeDp.value = it
+            },
+            valueRange = if (isBar) Prefs.BAR_HEIGHT_MIN..Prefs.BAR_HEIGHT_MAX
+            else Prefs.FLOAT_SIZE_MIN..Prefs.FLOAT_SIZE_MAX,
+        )
+        Text(
+            if (isBar) "También puedes arrastrar la barra hacia abajo o arriba para cambiar su alto, " +
+                "y deslizarla rápido hacia arriba para ocultarla."
+            else "También puedes pellizcar la burbuja con dos dedos para agrandarla o achicarla.",
+            color = dim, fontSize = 13.sp,
+        )
+
         Button(onClick = onToggleBubble, modifier = Modifier.fillMaxWidth()) {
-            Text(if (bubbleVisible) "Ocultar burbuja" else "Mostrar a Orbi en burbuja")
+            Text(if (bubbleVisible) "Ocultar a Orbi" else "Mostrar a Orbi sobre tus apps")
         }
         OutlinedButton(onClick = onNightMode, modifier = Modifier.fillMaxWidth()) {
             Text("Modo noche")

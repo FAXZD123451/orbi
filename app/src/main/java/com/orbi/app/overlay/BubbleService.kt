@@ -21,7 +21,11 @@ import android.os.SystemClock
 import android.view.GestureDetector
 import android.view.Gravity
 import android.view.MotionEvent
+import android.view.ScaleGestureDetector
 import android.view.VelocityTracker
+import android.view.animation.OvershootInterpolator
+import com.orbi.app.BubbleMode
+import kotlinx.coroutines.flow.drop
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.WindowManager
@@ -82,7 +86,9 @@ class BubbleService : Service() {
     private val density get() = resources.displayMetrics.density
     private val screenW get() = resources.displayMetrics.widthPixels
     private val screenH get() = resources.displayMetrics.heightPixels
-    private val bubbleSize get() = (BUBBLE_DP * density).toInt()
+    private val bubbleSize get() = (OrbiState.floatSizeDp.value * density).toInt()
+    private val barHeight get() = (OrbiState.barHeightDp.value * density).toInt()
+    private val isTopBar get() = OrbiState.bubbleMode.value == BubbleMode.TOP_BAR
     private val closeSize get() = (CLOSE_DP * density).toInt()
 
     override fun onBind(intent: Intent?) = null
@@ -103,6 +109,28 @@ class BubbleService : Service() {
         scope.launch {
             OrbiState.nightMode.collect { night ->
                 bubble?.visibility = if (night) View.GONE else View.VISIBLE
+            }
+        }
+        // Cambiaste de forma en la app (flotante ↔ barra superior): se vuelve a construir.
+        scope.launch {
+            OrbiState.bubbleMode.drop(1).collect {
+                bubble?.let { wm.removeView(it) }
+                bubble = null
+                hideCloseTarget()
+                showBubble()
+            }
+        }
+        // Cambiaste el tamaño (con el control de la app): se ajusta al momento.
+        scope.launch {
+            OrbiState.floatSizeDp.drop(1).collect { if (!isTopBar) applyFloatingSize(bubbleSize) }
+        }
+        scope.launch {
+            OrbiState.barHeightDp.drop(1).collect {
+                val view = bubble ?: return@collect
+                if (isTopBar && bubbleParams.height != barHeight) {
+                    bubbleParams.height = barHeight
+                    wm.updateViewLayout(view, bubbleParams)
+                }
             }
         }
     }
@@ -129,6 +157,7 @@ class BubbleService : Service() {
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         val view = bubble ?: return
+        if (isTopBar) return // ocupa todo el ancho: se adapta sola
         bubbleParams.x = bubbleParams.x.coerceIn(0, (screenW - bubbleSize).coerceAtLeast(0))
         bubbleParams.y = bubbleParams.y.coerceIn(0, (screenH - bubbleSize).coerceAtLeast(0))
         wm.updateViewLayout(view, bubbleParams)
@@ -203,8 +232,63 @@ class BubbleService : Service() {
         PixelFormat.TRANSLUCENT,
     ).apply { gravity = Gravity.TOP or Gravity.START }
 
+    private fun showBubble() = if (isTopBar) showTopBar() else showFloating()
+
+    /** Alto de la barra de estado de Android (la hora, la batería...). */
+    private fun statusBarHeight(): Int {
+        val id = resources.getIdentifier("status_bar_height", "dimen", "android")
+        return if (id > 0) resources.getDimensionPixelSize(id) else (24 * density).toInt()
+    }
+
+    /**
+     * Barra superior estilo "isla": todo el ancho, pegada arriba y con las esquinas de abajo
+     * redondeadas. Se dibuja por debajo de la barra de estado de Android, así que la hora y los
+     * íconos siguen viéndose encima y se pueden seguir bajando las notificaciones desde ahí.
+     */
     @SuppressLint("ClickableViewAccessibility")
-    private fun showBubble() {
+    private fun showTopBar() {
+        val statusBar = statusBarHeight()
+        bubbleParams = overlayParams(WindowManager.LayoutParams.MATCH_PARENT, barHeight, touchable = true).apply {
+            x = 0
+            y = 0
+            flags = flags or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+            // Que también cubra la zona de la cámara frontal (el "notch" o agujero).
+            layoutInDisplayCutoutMode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            } else {
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+        }
+        val topInset = statusBar / density
+        val view = ComposeView(this).apply {
+            owner.attach(this)
+            setContent {
+                val shape = RoundedCornerShape(bottomStart = 30.dp, bottomEnd = 30.dp)
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .clip(shape)
+                        .background(Color.Black)
+                ) {
+                    // La cara va un poco por debajo de la barra de estado, con los ojos a los
+                    // lados de la cámara frontal (como en el boceto).
+                    LiveOrbiFace(
+                        Modifier.fillMaxSize().padding(top = (topInset * 0.55f).dp),
+                        zoom = 1.25f,
+                    )
+                }
+            }
+            setOnTouchListener(TopBarTouch())
+            translationY = -barHeight.toFloat()
+        }
+        wm.addView(view, bubbleParams)
+        bubble = view
+        // Entra deslizándose desde arriba.
+        view.animate().translationY(0f).setDuration(380).setInterpolator(OvershootInterpolator(0.8f)).start()
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    private fun showFloating() {
         // Aparece donde la dejaste la última vez (o a la derecha, a un tercio de altura).
         val saved = Prefs.bubblePosition()
         bubbleParams = overlayParams(bubbleSize, bubbleSize, touchable = true).apply {
@@ -345,6 +429,96 @@ class BubbleService : Service() {
 
     // ---------- Gestos ----------
 
+    /** Cambia el tamaño de la burbuja flotante sin moverle el centro. */
+    private fun applyFloatingSize(size: Int) {
+        val view = bubble ?: return
+        val cx = bubbleParams.x + bubbleParams.width / 2
+        val cy = bubbleParams.y + bubbleParams.height / 2
+        bubbleParams.width = size
+        bubbleParams.height = size
+        bubbleParams.x = (cx - size / 2).coerceIn(0, (screenW - size).coerceAtLeast(0))
+        bubbleParams.y = (cy - size / 2).coerceIn(0, (screenH - size).coerceAtLeast(0))
+        wm.updateViewLayout(view, bubbleParams)
+    }
+
+    /**
+     * Gestos de la barra superior:
+     *  - Tocar: reacciona. Doble toque: abre la app.
+     *  - Arrastrar hacia arriba o abajo: cambia el alto de la barra.
+     *  - Deslizar rápido hacia arriba: la oculta.
+     *  - Mantener quieto medio segundo y frotar: acariciar.
+     */
+    private inner class TopBarTouch : View.OnTouchListener {
+        private val slop = ViewConfiguration.get(this@BubbleService).scaledTouchSlop
+        private val main = Handler(Looper.getMainLooper())
+        private var downY = 0f
+        private var startHeight = 0
+        private var resizing = false
+        private var petting = false
+        private var velocity: VelocityTracker? = null
+        private val minH get() = (Prefs.BAR_HEIGHT_MIN * density).toInt()
+        private val maxH get() = (Prefs.BAR_HEIGHT_MAX * density).toInt()
+
+        private val startPetting = Runnable {
+            if (!resizing) { petting = true; MoodEngine.onPetStart() }
+        }
+
+        private val gestures = GestureDetector(this@BubbleService, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onSingleTapConfirmed(e: MotionEvent): Boolean { MoodEngine.onTap(); return true }
+            override fun onDoubleTap(e: MotionEvent): Boolean { openApp(); return true }
+        }).apply { setIsLongpressEnabled(false) }
+
+        override fun onTouch(v: View, e: MotionEvent): Boolean {
+            if (!petting) gestures.onTouchEvent(e)
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    downY = e.rawY
+                    startHeight = bubbleParams.height
+                    resizing = false
+                    petting = false
+                    velocity?.recycle()
+                    velocity = VelocityTracker.obtain().also { it.addMovement(e) }
+                    main.postDelayed(startPetting, PET_DELAY_MS)
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    velocity?.addMovement(e)
+                    val dy = e.rawY - downY
+                    if (petting) {
+                        MoodEngine.onPetting()
+                    } else {
+                        if (!resizing && kotlin.math.abs(dy) > slop) {
+                            resizing = true
+                            main.removeCallbacks(startPetting)
+                        }
+                        if (resizing) {
+                            bubbleParams.height = (startHeight + dy.toInt()).coerceIn(minH, maxH)
+                            wm.updateViewLayout(v, bubbleParams)
+                        }
+                    }
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    main.removeCallbacks(startPetting)
+                    velocity?.computeCurrentVelocity(1000)
+                    val vy = velocity?.yVelocity ?: 0f
+                    when {
+                        petting -> MoodEngine.onPetEnd()
+                        resizing && vy < -HIDE_SPEED * density -> {
+                            // Deslizar rápido hacia arriba: se esconde subiendo.
+                            v.animate().translationY(-v.height.toFloat()).setDuration(200)
+                                .withEndAction { closeByUser() }.start()
+                        }
+                        resizing -> OrbiState.barHeightDp.value = bubbleParams.height / density
+                    }
+                    resizing = false
+                    petting = false
+                    velocity?.recycle()
+                    velocity = null
+                }
+            }
+            return true
+        }
+    }
+
     /**
      * Gestos de la burbuja:
      *  - Tocar: reacciona. Doble toque: abre la app.
@@ -361,14 +535,27 @@ class BubbleService : Service() {
         private var downY = 0f
         private var dragging = false
         private var petting = false
+        private var scaling = false
         private var velocity: VelocityTracker? = null
 
         private val startPetting = Runnable {
-            if (!dragging) {
+            if (!dragging && !scaling) {
                 petting = true
                 MoodEngine.onPetStart()
             }
         }
+
+        // Pellizco con dos dedos: cambia el tamaño de la burbuja.
+        private val pinch = ScaleGestureDetector(this@BubbleService,
+            object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                override fun onScale(d: ScaleGestureDetector): Boolean {
+                    val minPx = Prefs.FLOAT_SIZE_MIN * density
+                    val maxPx = Prefs.FLOAT_SIZE_MAX * density
+                    val size = (bubbleParams.width * d.scaleFactor).coerceIn(minPx, maxPx).toInt()
+                    applyFloatingSize(size)
+                    return true
+                }
+            })
 
         private val gestures = GestureDetector(this@BubbleService, object : GestureDetector.SimpleOnGestureListener() {
             override fun onSingleTapConfirmed(e: MotionEvent): Boolean { MoodEngine.onTap(); return true }
@@ -377,6 +564,21 @@ class BubbleService : Service() {
 
         // Se usan coordenadas absolutas (rawX/rawY) porque la ventana se mueve bajo el dedo.
         override fun onTouch(v: View, e: MotionEvent): Boolean {
+            pinch.onTouchEvent(e)
+            if (e.pointerCount > 1 || scaling) {
+                // Con dos dedos solo se cambia el tamaño: nada de arrastrar ni acariciar.
+                if (!scaling) {
+                    scaling = true
+                    main.removeCallbacks(startPetting)
+                    if (dragging) { hideCloseTarget(); dragging = false }
+                }
+                if (e.actionMasked == MotionEvent.ACTION_UP || e.actionMasked == MotionEvent.ACTION_CANCEL) {
+                    scaling = false
+                    OrbiState.floatSizeDp.value = bubbleParams.width / density
+                    snapToEdge(v)
+                }
+                return true
+            }
             if (!petting) gestures.onTouchEvent(e)
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
@@ -455,6 +657,7 @@ class BubbleService : Service() {
         private const val CLOSE_DP = 72
         private const val CLOSE_RADIUS_DP = 80
         private const val PET_DELAY_MS = 450L
+        private const val HIDE_SPEED = 1800f   // dp/s hacia arriba para ocultar la barra
         private const val FLING_SPEED = 900f   // dp/s para que soltar cuente como lanzamiento
         private const val STOP_SPEED = 220f    // px/s: por debajo, deja de volar
         private const val BOUNCE = 0.72f       // energía que conserva al rebotar

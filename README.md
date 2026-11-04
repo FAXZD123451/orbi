@@ -35,7 +35,11 @@ Un asistente robot para Android que vive en tu pantalla. Flota sobre cualquier a
 | Lo ignoras 2 minutos | Bosteza y se duerme |
 | Lo pones a cargar / batería baja | Se alegra / se pone triste |
 
-Además: **burbuja flotante** que se arrastra, se pega a los bordes y se cierra soltándola sobre una X, y **modo noche** a pantalla completa con brillo mínimo y protección contra quemado de pantalla OLED.
+Además, dos formas de mostrarse sobre tus apps:
+- **Barra superior** estilo isla: todo el ancho, con los ojos junto a la cámara frontal. La hora y los íconos de Android siguen visibles encima. Arrástrala para cambiar su alto; deslízala rápido hacia arriba para ocultarla.
+- **Burbuja flotante** que se arrastra, se lanza, se pega a los bordes, se agranda con un pellizco y se cierra soltándola sobre una X.
+
+Y un **modo noche** a pantalla completa con brillo mínimo y protección contra quemado de pantalla OLED.
 
 ## Cómo funciona
 

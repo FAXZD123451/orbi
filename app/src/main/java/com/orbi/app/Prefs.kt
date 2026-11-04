@@ -17,6 +17,9 @@ object Prefs {
     private const val BUBBLE_WANTED = "bubble_wanted"
     private const val BUBBLE_X = "bubble_x"
     private const val BUBBLE_Y = "bubble_y"
+    private const val MODE = "bubble_mode"
+    private const val FLOAT_SIZE = "float_size_dp"
+    private const val BAR_HEIGHT = "bar_height_dp"
 
     private lateinit var sp: SharedPreferences
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -26,10 +29,24 @@ object Prefs {
         sp = context.getSharedPreferences("orbi", Context.MODE_PRIVATE)
         OrbiState.trackingEnabled.value = sp.getBoolean(TRACKING, true)
         OrbiState.soundEnabled.value = sp.getBoolean(SOUND, true)
-        // Cada vez que cambian los interruptores, se guardan solos.
+        OrbiState.bubbleMode.value =
+            runCatching { BubbleMode.valueOf(sp.getString(MODE, null)!!) }.getOrDefault(BubbleMode.FLOATING)
+        OrbiState.floatSizeDp.value = sp.getFloat(FLOAT_SIZE, FLOAT_SIZE_DEFAULT)
+        OrbiState.barHeightDp.value = sp.getFloat(BAR_HEIGHT, BAR_HEIGHT_DEFAULT)
+        // Cada vez que cambian los interruptores o el tamaño, se guardan solos.
         scope.launch { OrbiState.trackingEnabled.drop(1).collect { v -> sp.edit { putBoolean(TRACKING, v) } } }
         scope.launch { OrbiState.soundEnabled.drop(1).collect { v -> sp.edit { putBoolean(SOUND, v) } } }
+        scope.launch { OrbiState.bubbleMode.drop(1).collect { v -> sp.edit { putString(MODE, v.name) } } }
+        scope.launch { OrbiState.floatSizeDp.drop(1).collect { v -> sp.edit { putFloat(FLOAT_SIZE, v) } } }
+        scope.launch { OrbiState.barHeightDp.drop(1).collect { v -> sp.edit { putFloat(BAR_HEIGHT, v) } } }
     }
+
+    const val FLOAT_SIZE_MIN = 64f
+    const val FLOAT_SIZE_MAX = 200f
+    const val FLOAT_SIZE_DEFAULT = 96f
+    const val BAR_HEIGHT_MIN = 90f
+    const val BAR_HEIGHT_MAX = 260f
+    const val BAR_HEIGHT_DEFAULT = 150f
 
     /** Ya vio la pantalla de bienvenida. */
     var onboarded: Boolean
