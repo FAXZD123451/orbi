@@ -1,0 +1,39 @@
+package com.orbi.app
+
+import androidx.compose.ui.geometry.Offset
+import com.orbi.app.face.Expression
+import kotlinx.coroutines.flow.MutableStateFlow
+
+/**
+ * Estado compartido entre la app, la burbuja, el modo noche, los sensores y el cerebro.
+ * Nadie elige la expresión a mano: la escribe [com.orbi.app.brain.MoodEngine].
+ */
+object OrbiState {
+    /** Lo que Orbi siente ahora. */
+    val expression = MutableStateFlow(Expression.NEUTRAL)
+    /** Ojo que cierra al guiñar (-1 izquierdo, 1 derecho). */
+    val winkSide = MutableStateFlow(1)
+
+    // ---- Cámara ----
+    /** Hacia dónde está tu cara (-1..1). */
+    val look = MutableStateFlow(Offset.Zero)
+    val faceVisible = MutableStateFlow(false)
+    val smiling = MutableStateFlow(false)
+    /** Inclinación de tu cabeza en grados (Orbi la imita). */
+    val headTilt = MutableStateFlow(0f)
+    val trackingEnabled = MutableStateFlow(true)
+    val cameraAllowed = MutableStateFlow(false)
+
+    // ---- Sensores y avisos ----
+    /** Hacia dónde "caen" sus ojos cuando inclinas el celular. */
+    val gravity = MutableStateFlow(Offset.Zero)
+    /** Mirada forzada un momento (por ejemplo, hacia una notificación nueva). */
+    val lookHint = MutableStateFlow<Offset?>(null)
+    val batteryLow = MutableStateFlow(false)
+    val notificationsAllowed = MutableStateFlow(false)
+
+    // ---- Preferencias y pantallas ----
+    val soundEnabled = MutableStateFlow(true)
+    val bubbleVisible = MutableStateFlow(false)
+    val nightMode = MutableStateFlow(false)
+}

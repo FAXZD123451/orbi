@@ -1,0 +1,13 @@
+*.iml
+.gradle/
+.kotlin/
+/local.properties
+/.idea/
+.DS_Store
+/build
+/app/build
+/captures
+.externalNativeBuild
+.cxx
+# Claves y configuración local (API keys nunca al repo)
+secrets.properties
