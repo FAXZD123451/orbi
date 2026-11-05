@@ -54,6 +54,7 @@ import androidx.core.app.NotificationCompat
 import com.orbi.app.MainActivity
 import com.orbi.app.OrbiState
 import com.orbi.app.R
+import com.orbi.app.assistant.Assistant
 import com.orbi.app.brain.MoodEngine
 import com.orbi.app.face.LiveOrbiFace
 import com.orbi.app.vision.FaceTracker
@@ -83,6 +84,9 @@ class BubbleService : Service() {
     private lateinit var closeParams: WindowManager.LayoutParams
     private val nearClose = mutableStateOf(false)
     private var flingJob: Job? = null
+    /** El servicio quedó con permiso de micrófono en segundo plano. */
+    private var micGranted = false
+    private var listening = false
 
     private val density get() = resources.displayMetrics.density
     private val screenW get() = resources.displayMetrics.widthPixels
@@ -105,6 +109,8 @@ class BubbleService : Service() {
         // Mientras la burbuja exista, Orbi te busca con la cámara aunque estés en otra app.
         // (Si Android revivió el servicio en segundo plano, no deja usar la cámara hasta abrir la app.)
         if (withCamera) FaceTracker.acquire(this, owner)
+        // Y escucha por si le dices "Oye Orbi".
+        if (micGranted) { Assistant.attach(this); listening = true }
 
         // En modo noche la cara ocupa toda la pantalla: la burbuja se esconde.
         scope.launch {
@@ -149,6 +155,8 @@ class BubbleService : Service() {
             // Se dio el permiso de cámara o se cambió el seguimiento: actualiza el servicio.
             ACTION_REFRESH -> {
                 if (goForeground()) FaceTracker.acquire(this, owner)
+                if (micGranted && !listening) { Assistant.attach(this); listening = true }
+                Assistant.refresh()
             }
         }
         // Si Android cierra el servicio por falta de memoria, lo vuelve a crear solo.
@@ -176,6 +184,7 @@ class BubbleService : Service() {
         barHandler.removeCallbacksAndMessages(null)
         barAnimator?.cancel()
         FaceTracker.release(this, owner)
+        if (listening) Assistant.detach()
         scope.cancel()
         bubble?.let { wm.removeView(it) }
         closeTarget?.let { wm.removeView(it) }
@@ -212,22 +221,32 @@ class BubbleService : Service() {
 
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(NOTIFICATION_ID, notification)
+            micGranted = true
             return true
         }
         val wantsCamera = FaceTracker.hasPermission(this) && OrbiState.trackingEnabled.value
-        if (wantsCamera) {
+        val wantsMic = Assistant.hasMic(this) && OrbiState.voiceEnabled.value
+        val base = ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+        val cam = ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
+        val mic = ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+        // Se prueba de más a menos: cámara + micrófono, solo cámara, solo micrófono, ninguno.
+        // Android no deja pedirlos si el servicio arrancó en segundo plano (por ejemplo, al
+        // reiniciar el celular); en ese caso la burbuja sigue, y se activan al abrir la app.
+        val attempts = buildList {
+            if (wantsCamera && wantsMic) add(base or cam or mic)
+            if (wantsCamera) add(base or cam)
+            if (wantsMic) add(base or mic)
+            add(base)
+        }
+        for (type in attempts) {
             try {
-                startForeground(
-                    NOTIFICATION_ID, notification,
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA,
-                )
-                return true
+                startForeground(NOTIFICATION_ID, notification, type)
+                micGranted = type and mic != 0
+                return type and cam != 0
             } catch (e: SecurityException) {
-                // Android no deja pedir la cámara si el servicio arrancó en segundo plano
-                // (por ejemplo, al reiniciar el celular). La burbuja sigue, sin cámara.
+                continue
             }
         }
-        startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         return false
     }
 

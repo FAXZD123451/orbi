@@ -60,6 +60,10 @@ enum class Expression {
     SCARED,
     /** Ojos a medio cerrar: el cuarto está a oscuras o le está dando sueño. */
     DROWSY,
+    /** Ojos grandes y atentos: te está escuchando. */
+    LISTENING,
+    /** Ojos entrecerrados mirando hacia arriba: está pensando la respuesta. */
+    THINKING,
 }
 
 /*
@@ -103,6 +107,8 @@ private fun eyeFor(e: Expression) = when (e) {
     Expression.DIZZY -> EyeShape(w = 0.14f, h = 0.14f, radius = 0.07f)
     Expression.SLEEPING -> EyeShape(w = 0.15f, h = 0.028f, radius = 0.014f)
     Expression.DROWSY -> EyeShape(w = 0.14f, h = 0.2f, radius = 0.05f, cutTop = 0.55f)
+    Expression.LISTENING -> EyeShape(w = 0.15f, h = 0.3f, radius = 0.07f)
+    Expression.THINKING -> EyeShape(w = 0.12f, h = 0.2f, radius = 0.05f, cutTop = 0.25f)
 }
 
 private fun mouthFor(e: Expression) = when (e) {
@@ -118,6 +124,8 @@ private fun mouthFor(e: Expression) = when (e) {
     Expression.DIZZY -> MouthShape(w = 0.12f)
     Expression.SLEEPING -> MouthShape(w = 0.05f)
     Expression.DROWSY -> MouthShape(w = 0.06f, curve = -0.005f)
+    Expression.LISTENING -> MouthShape(w = 0.05f, open = 0.03f)
+    Expression.THINKING -> MouthShape(w = 0.07f, curve = -0.012f)
 }
 
 private val NO_BLINK = setOf(

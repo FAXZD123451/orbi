@@ -7,6 +7,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 /** Cómo se muestra Orbi sobre las demás apps. */
 enum class BubbleMode { FLOATING, TOP_BAR }
 
+/** En qué parte de una conversación está Orbi. */
+enum class AssistantState { IDLE, LISTENING, THINKING, SPEAKING }
+
 /** Movimientos de cabeza de Orbi que se disparan una vez (asentir, negar). */
 enum class CueType { NOD, HEAD_SHAKE }
 
@@ -53,6 +56,17 @@ object OrbiState {
     val faceDown = MutableStateFlow(false)
     /** El cuarto está a oscuras (sensor de luz). */
     val roomDark = MutableStateFlow(false)
+
+    // ---- Asistente de voz ----
+    val assistant = MutableStateFlow(AssistantState.IDLE)
+    /** Escuchar siempre por si dices "Oye Orbi". */
+    val voiceEnabled = MutableStateFlow(true)
+    val earReady = MutableStateFlow(false)      // modelo de Vosk cargado
+    val brainInstalled = MutableStateFlow(false) // modelo de Gemma presente
+    val lastHeard = MutableStateFlow("")
+    val lastReply = MutableStateFlow("")
+    /** Progreso al copiar el modelo de Gemma (0..1), o null si no se está copiando. */
+    val brainCopyProgress = MutableStateFlow<Float?>(null)
 
     // ---- Preferencias y pantallas ----
     val soundEnabled = MutableStateFlow(true)

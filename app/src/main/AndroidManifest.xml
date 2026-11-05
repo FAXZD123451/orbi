@@ -13,6 +13,11 @@
     <uses-feature android:name="android.hardware.camera.front" android:required="false" />
     <!-- Volver a aparecer al encender el celular y pedir que no lo cierre el ahorro de batería -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Escuchar "Oye Orbi" (todo se procesa en el celular) -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <!-- Recordatorios a la hora justa -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <application
@@ -43,11 +48,15 @@
         <service
             android:name=".overlay.BubbleService"
             android:exported="false"
-            android:foregroundServiceType="specialUse|camera">
+            android:foregroundServiceType="specialUse|camera|microphone">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Asistente con cara animada que el usuario mantiene flotando sobre otras apps" />
         </service>
+
+        <receiver
+            android:name=".assistant.ReminderReceiver"
+            android:exported="false" />
 
         <receiver
             android:name=".overlay.BootReceiver"

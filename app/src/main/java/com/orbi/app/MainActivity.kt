@@ -10,6 +10,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.lifecycle.lifecycleScope
+import com.orbi.app.assistant.Assistant
+import com.orbi.app.assistant.LocalBrain
+import kotlinx.coroutines.launch
 import androidx.compose.material3.Slider
 import kotlin.math.roundToInt
 import com.orbi.app.onboarding.OnboardingScreen
@@ -72,10 +77,30 @@ class MainActivity : ComponentActivity() {
 
     private val permissions =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
-            // Si acaba de dar la cámara, Orbi empieza a buscarlo ya (aquí y en la burbuja).
+            // Si acaba de dar la cámara o el micrófono, Orbi empieza a usarlos ya (aquí y en la burbuja).
             FaceTracker.rebind(this)
             BubbleService.refresh(this)
+            Assistant.refresh()
         }
+
+    /** Elegir el archivo del modelo de Gemma (por ejemplo, desde Descargas) para instalarlo. */
+    private val pickBrain = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@registerForActivityResult
+        lifecycleScope.launch {
+            val ok = LocalBrain.installFrom(this@MainActivity, uri)
+            Toast.makeText(
+                this@MainActivity,
+                if (ok) "¡Cerebro instalado!" else "No parece un modelo válido (debe ser el archivo .task de Gemma)",
+                Toast.LENGTH_LONG,
+            ).show()
+        }
+    }
+
+    private fun askMic(): Boolean {
+        if (Assistant.hasMic(this)) return true
+        permissions.launch(arrayOf(Manifest.permission.RECORD_AUDIO))
+        return false
+    }
 
     /** Sube cada vez que la app vuelve al frente (para revisar permisos dados en Ajustes). */
     private var resumeTick by mutableIntStateOf(0)
@@ -101,6 +126,14 @@ class MainActivity : ComponentActivity() {
                             startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
                         },
                         onShowWelcome = { onboarded = false },
+                        onToggleVoice = { on ->
+                            OrbiState.voiceEnabled.value = on
+                            if (on) askMic()
+                            BubbleService.refresh(this)
+                            Assistant.refresh()
+                        },
+                        onTalk = { if (askMic()) Assistant.talk(this) },
+                        onInstallBrain = { pickBrain.launch(arrayOf("*/*")) },
                     )
                 }
             }
@@ -112,6 +145,7 @@ class MainActivity : ComponentActivity() {
         resumeTick++
         MoodEngine.onAppOpened()
         FaceTracker.acquire(this, this)
+        Assistant.attach(this)
         OrbiState.notificationsAllowed.value = NotificationWatcher.isAllowed(this)
         // Si la burbuja estaba abierta y Android la cerró, vuelve al abrir la app (ya con cámara).
         if (Prefs.bubbleWanted && !OrbiState.bubbleVisible.value && Settings.canDrawOverlays(this)) {
@@ -121,6 +155,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onPause() {
         FaceTracker.release(this, this)
+        Assistant.detach()
         super.onPause()
     }
 
@@ -145,6 +180,14 @@ class MainActivity : ComponentActivity() {
             actionLabel = "Permitir cámara",
             isDone = { granted(Manifest.permission.CAMERA) },
             action = { permissions.launch(arrayOf(Manifest.permission.CAMERA)) },
+        ),
+        OnboardingStep(
+            title = "Para escucharte",
+            body = "Cuando digas \"Oye Orbi\" te respondo. Escucho dentro de tu celular, sin internet: " +
+                "no grabo ni envío nada, solo espero mi nombre.",
+            actionLabel = "Permitir micrófono",
+            isDone = { Assistant.hasMic(this) },
+            action = { permissions.launch(arrayOf(Manifest.permission.RECORD_AUDIO)) },
         ),
         OnboardingStep(
             title = "Para quedarme contigo",
@@ -223,6 +266,81 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+/** Estado del asistente: oído, cerebro, "Oye Orbi" y la última conversación. */
+@Composable
+private fun AssistantSection(
+    dim: Color,
+    onToggleVoice: (Boolean) -> Unit,
+    onTalk: () -> Unit,
+    onInstallBrain: () -> Unit,
+) {
+    val voice by OrbiState.voiceEnabled.collectAsState()
+    val earReady by OrbiState.earReady.collectAsState()
+    val brain by OrbiState.brainInstalled.collectAsState()
+    val copying by OrbiState.brainCopyProgress.collectAsState()
+    val state by OrbiState.assistant.collectAsState()
+    val heard by OrbiState.lastHeard.collectAsState()
+    val reply by OrbiState.lastReply.collectAsState()
+    val ok = Color(0xFF3DD68C)
+    val missing = Color(0xFFFFB224)
+
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(Color(0xFF18181C))
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text("Asistente", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(10.dp).clip(CircleShape).background(if (earReady) ok else missing))
+            Text(
+                if (earReady) "Oído listo (reconocimiento de voz sin internet)" else "Oído: falta el modelo de voz o el micrófono",
+                color = dim, fontSize = 13.sp, modifier = Modifier.padding(start = 10.dp),
+            )
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(10.dp).clip(CircleShape).background(if (brain) ok else missing))
+            Text(
+                if (brain) "Cerebro listo (Gemma, dentro de tu celular)" else "Cerebro: falta instalar el modelo de Gemma",
+                color = dim, fontSize = 13.sp, modifier = Modifier.padding(start = 10.dp),
+            )
+        }
+        copying?.let { p ->
+            Text("Instalando cerebro... ${(p * 100).roundToInt()} %", color = Color.White, fontSize = 13.sp)
+            LinearProgressIndicator(progress = { p }, modifier = Modifier.fillMaxWidth())
+        }
+        if (!brain && copying == null) {
+            OutlinedButton(onClick = onInstallBrain, modifier = Modifier.fillMaxWidth()) {
+                Text("Instalar cerebro (archivo .task de Gemma)")
+            }
+        }
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Responder a \"Oye Orbi\"", color = Color.White, fontWeight = FontWeight.Medium)
+                Text("Escucha en tu celular solo para detectar su nombre; no graba nada.", color = dim, fontSize = 13.sp)
+            }
+            Switch(checked = voice, onCheckedChange = onToggleVoice)
+        }
+
+        Button(onClick = onTalk, modifier = Modifier.fillMaxWidth(), enabled = state == AssistantState.IDLE) {
+            Text(
+                when (state) {
+                    AssistantState.IDLE -> "Hablar con Orbi"
+                    AssistantState.LISTENING -> "Te escucho..."
+                    AssistantState.THINKING -> "Pensando..."
+                    AssistantState.SPEAKING -> "Hablando..."
+                }
+            )
+        }
+        if (heard.isNotBlank()) Text("Tú: $heard", color = dim, fontSize = 13.sp)
+        if (reply.isNotBlank()) Text("Orbi: $reply", color = Color.White, fontSize = 14.sp)
+    }
+}
+
 @Composable
 private fun HomeScreen(
     onToggleBubble: () -> Unit,
@@ -230,6 +348,9 @@ private fun HomeScreen(
     onToggleTracking: (Boolean) -> Unit,
     onNotificationAccess: () -> Unit,
     onShowWelcome: () -> Unit,
+    onToggleVoice: (Boolean) -> Unit,
+    onTalk: () -> Unit,
+    onInstallBrain: () -> Unit,
 ) {
     val faceVisible by OrbiState.faceVisible.collectAsState()
     val tracking by OrbiState.trackingEnabled.collectAsState()
@@ -317,6 +438,8 @@ private fun HomeScreen(
         }
 
         Spacer(Modifier.height(4.dp))
+        AssistantSection(dim, onToggleVoice, onTalk, onInstallBrain)
+
         // ---- Forma y tamaño de Orbi sobre las demás apps ----
         val mode by OrbiState.bubbleMode.collectAsState()
         val floatSize by OrbiState.floatSizeDp.collectAsState()

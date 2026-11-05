@@ -2,6 +2,7 @@ package com.orbi.app.brain
 
 import android.os.SystemClock
 import androidx.compose.ui.geometry.Offset
+import com.orbi.app.AssistantState
 import com.orbi.app.Cue
 import com.orbi.app.CueType
 import com.orbi.app.OrbiState
@@ -333,6 +334,20 @@ object MoodEngine {
     private fun tick() {
         val t = now()
         watchFace(t)
+
+        // Durante una conversación manda el asistente: escucha, piensa o habla.
+        val talking = when (OrbiState.assistant.value) {
+            AssistantState.LISTENING -> Expression.LISTENING
+            AssistantState.THINKING -> Expression.THINKING
+            AssistantState.SPEAKING -> Expression.TALKING
+            AssistantState.IDLE -> null
+        }
+        if (talking != null) {
+            lastInteraction = t
+            sequence.clear()
+            if (OrbiState.expression.value != talking) OrbiState.expression.value = talking
+            return
+        }
 
         val reaction = currentReaction(t)
         val expression = reaction ?: stableBackground(t)

@@ -18,6 +18,7 @@ object Prefs {
     private const val BUBBLE_X = "bubble_x"
     private const val BUBBLE_Y = "bubble_y"
     private const val MODE = "bubble_mode"
+    private const val VOICE = "voice_enabled"
     private const val FLOAT_SIZE = "float_size_dp"
     private const val BAR_HEIGHT = "bar_height_dp"
 
@@ -36,6 +37,8 @@ object Prefs {
         // Cada vez que cambian los interruptores o el tamaño, se guardan solos.
         scope.launch { OrbiState.trackingEnabled.drop(1).collect { v -> sp.edit { putBoolean(TRACKING, v) } } }
         scope.launch { OrbiState.soundEnabled.drop(1).collect { v -> sp.edit { putBoolean(SOUND, v) } } }
+        OrbiState.voiceEnabled.value = sp.getBoolean(VOICE, true)
+        scope.launch { OrbiState.voiceEnabled.drop(1).collect { v -> sp.edit { putBoolean(VOICE, v) } } }
         scope.launch { OrbiState.bubbleMode.drop(1).collect { v -> sp.edit { putString(MODE, v.name) } } }
         scope.launch { OrbiState.floatSizeDp.drop(1).collect { v -> sp.edit { putFloat(FLOAT_SIZE, v) } } }
         scope.launch { OrbiState.barHeightDp.drop(1).collect { v -> sp.edit { putFloat(BAR_HEIGHT, v) } } }

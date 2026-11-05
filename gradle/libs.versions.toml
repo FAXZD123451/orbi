@@ -8,11 +8,17 @@ composeBom = "2026.02.01"
 junit = "4.13.2"
 camerax = "1.6.2"
 mlkitFace = "16.1.7"
+vosk = "0.3.75"
+jna = "5.18.1"
+mediapipeGenai = "0.10.35"
 
 [libraries]
 androidx-camera-camera2 = { group = "androidx.camera", name = "camera-camera2", version.ref = "camerax" }
 androidx-camera-lifecycle = { group = "androidx.camera", name = "camera-lifecycle", version.ref = "camerax" }
 mlkit-face-detection = { group = "com.google.mlkit", name = "face-detection", version.ref = "mlkitFace" }
+vosk-android = { group = "com.alphacephei", name = "vosk-android", version.ref = "vosk" }
+jna = { group = "net.java.dev.jna", name = "jna", version.ref = "jna" }
+mediapipe-genai = { group = "com.google.mediapipe", name = "tasks-genai", version.ref = "mediapipeGenai" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycleRuntimeKtx" }
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
