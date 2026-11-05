@@ -28,4 +28,10 @@ data class DebugFrame(
     val light: Int = 0,
     val fps: Float = 0f,
     val analysisMs: Long = 0,
+    /** 21 puntos por mano, en píxeles de la imagen. */
+    val hands: List<List<PointF>> = emptyList(),
+    /** Gesto de cada mano con su confianza ("Thumb_Up 0.91" o "–"). */
+    val gestures: List<String> = emptyList(),
+    /** Objetos y escenas del entorno con su confianza. */
+    val labels: List<Pair<String, Float>> = emptyList(),
 )

@@ -20,6 +20,8 @@ mlkit-face-detection = { group = "com.google.mlkit", name = "face-detection", ve
 vosk-android = { group = "com.alphacephei", name = "vosk-android", version.ref = "vosk" }
 jna = { group = "net.java.dev.jna", name = "jna", version.ref = "jna" }
 mediapipe-genai = { group = "com.google.mediapipe", name = "tasks-genai", version.ref = "mediapipeGenai" }
+mediapipe-vision = { group = "com.google.mediapipe", name = "tasks-vision", version.ref = "mediapipeGenai" }
+mlkit-image-labeling = { group = "com.google.mlkit", name = "image-labeling", version = "17.0.9" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycleRuntimeKtx" }
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }

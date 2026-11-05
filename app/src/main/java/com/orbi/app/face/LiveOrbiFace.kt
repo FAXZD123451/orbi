@@ -23,23 +23,26 @@ fun LiveOrbiFace(modifier: Modifier = Modifier, zoom: Float = 1f) {
     val cue by OrbiState.cue.collectAsState()
     val searching by OrbiState.searching.collectAsState()
     val tracking by OrbiState.trackingEnabled.collectAsState()
+    val handVisible by OrbiState.handVisible.collectAsState()
+    val handLook by OrbiState.handLook.collectAsState()
 
-    // Prioridad de la mirada: un aviso (notificación) > tu cara > la gravedad del celular.
+    // Prioridad de la mirada: un aviso > tu cara > tu mano > la gravedad del celular.
     val look = when {
         expression == Expression.SLEEPING -> Offset.Zero
         lookHint != null -> lookHint!!
         faceVisible -> faceLook
+        handVisible -> handLook
         else -> gravity
     }
     OrbiFace(
         expression = expression,
         modifier = modifier,
         look = look,
-        idleGlances = !faceVisible && lookHint == null && gravity.getDistance() < 0.2f,
+        idleGlances = !faceVisible && !handVisible && lookHint == null && gravity.getDistance() < 0.2f,
         zoom = zoom,
         headTilt = if (faceVisible) headTilt else 0f,
         winkSide = winkSide,
         cue = cue,
-        searching = tracking && searching && !faceVisible && lookHint == null,
+        searching = tracking && searching && !faceVisible && !handVisible && lookHint == null,
     )
 }

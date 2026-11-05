@@ -8,6 +8,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.core.content.ContextCompat
 import com.orbi.app.AssistantState
 import com.orbi.app.OrbiState
+import com.orbi.app.vision.FaceTracker
+import com.orbi.app.vision.SceneSense
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.launch
@@ -44,6 +46,7 @@ object Assistant {
         hosts = (hosts - 1).coerceAtLeast(0)
         if (hosts == 0) {
             Ear.stop()
+            GoogleEar.stop()
             Mouth.stop()
             set(AssistantState.IDLE)
         }
@@ -89,18 +92,30 @@ object Assistant {
         thinkJob?.cancel()
         OrbiState.lastHeard.value = ""
         set(AssistantState.LISTENING)
-        if (rest.isNotBlank()) {
-            onCommand(rest) // lo dijo de corrido: "oye orbi, ¿qué hora es?"
+        // Lo dijo de corrido ("oye orbi, ¿qué hora es?"): se usa lo que entendió Vosk solo si
+        // es una frase de verdad; si no, se le pregunta "¿Sí?" y se escucha con más precisión.
+        if (rest.trim().split(" ").size >= 2) {
+            onCommand(rest)
             return
         }
         val (name, text) = listOf("orbi_si" to "¿Sí?", "orbi_dime" to "¡Dime!", "orbi_aqui" to "¡Aquí estoy!").random()
-        Mouth.phrase(app, name, text) { Ear.listenForCommand() }
+        Mouth.phrase(app, name, text) { listenForCommand() }
+    }
+
+    /** Escucha tu pregunta con el mejor oído disponible: Google si se puede, si no Vosk. */
+    private fun listenForCommand() {
+        set(AssistantState.LISTENING)
+        if (GoogleEar.canUse(app)) GoogleEar.listen(app, ::onCommand) else Ear.listenForCommand()
     }
 
     private fun onCommand(text: String) {
         OrbiState.lastHeard.value = text
         if (text.isBlank()) {
             speakPhrase("orbi_no_entendi", "No te entendí bien, ¿me lo repites?", listenAgain = false)
+            return
+        }
+        if (SCENE.containsMatchIn(Ear.normalize(text))) {
+            describeScene()
             return
         }
         val local = Commands.handle(app, text)
@@ -131,7 +146,50 @@ object Assistant {
         }
     }
 
+    /** "¿Qué ves?", "¿qué hay aquí?", "mira esto"... */
+    private val SCENE = Regex("""\b(que ves|que estas viendo|que hay (aqui|aca|ahi|alrededor)|que es esto|mira esto|describe|donde estoy)\b""")
+
+    /** Mira por la cámara, reconoce objetos (ML Kit) y lo cuenta de forma natural (Gemma). */
+    private fun describeScene() {
+        if (!OrbiState.cameraAllowed.value || !OrbiState.trackingEnabled.value || !FaceTracker.isRunning) {
+            speak("Necesito la cámara activada para poder ver. Actívala en Ajustes, en Seguir con la mirada.")
+            return
+        }
+        set(AssistantState.THINKING)
+        var answered = false
+        val timeout = scope.launch {
+            kotlinx.coroutines.delay(4000)
+            if (!answered) { answered = true; speak("Uy, no logro ver bien. ¿Lo intentamos otra vez?") }
+        }
+        SceneSense.request { labels ->
+            if (answered) return@request
+            answered = true
+            timeout.cancel()
+            val things = labels.map { it.first }.distinct().take(5)
+            if (things.isEmpty()) {
+                speak("Mmm, no reconozco nada en especial. Quizá está muy oscuro o muy cerca.")
+                return@request
+            }
+            if (!LocalBrain.isInstalled(app)) {
+                speak("Veo: ${things.joinToString(", ")}.")
+                return@request
+            }
+            OrbiState.lookHint.value = Offset(0.7f, -0.9f)
+            thinkJob = scope.launch {
+                val reply = LocalBrain.ask(
+                    app,
+                    "Estoy mirando por mi cámara y reconozco estas cosas: ${things.joinToString(", ")}. " +
+                        "Si alguna palabra está en inglés, tradúcela. Cuéntame en una sola frase natural y simpática qué ves.",
+                )
+                OrbiState.lookHint.value = null
+                OrbiState.lastReply.value = reply
+                speak(reply)
+            }
+        }
+    }
+
     private fun speak(text: String, after: () -> Unit = {}) {
+        OrbiState.lastReply.value = text
         set(AssistantState.SPEAKING)
         Mouth.say(text) { done(); after() }
     }
@@ -139,7 +197,7 @@ object Assistant {
     private fun speakPhrase(name: String, text: String, listenAgain: Boolean, after: () -> Unit = {}) {
         set(AssistantState.SPEAKING)
         Mouth.phrase(app, name, text) {
-            if (listenAgain) { set(AssistantState.LISTENING); Ear.listenForCommand() } else { done(); after() }
+            if (listenAgain) listenForCommand() else { done(); after() }
         }
     }
 

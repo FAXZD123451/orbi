@@ -19,6 +19,8 @@ object Prefs {
     private const val BUBBLE_Y = "bubble_y"
     private const val MODE = "bubble_mode"
     private const val VOICE = "voice_enabled"
+    private const val HANDS = "hands_enabled"
+    private const val ONLINE_SPEECH = "online_speech"
     private const val FLOAT_SIZE = "float_size_dp"
     private const val BAR_HEIGHT = "bar_height_dp"
 
@@ -39,6 +41,10 @@ object Prefs {
         scope.launch { OrbiState.soundEnabled.drop(1).collect { v -> sp.edit { putBoolean(SOUND, v) } } }
         OrbiState.voiceEnabled.value = sp.getBoolean(VOICE, true)
         scope.launch { OrbiState.voiceEnabled.drop(1).collect { v -> sp.edit { putBoolean(VOICE, v) } } }
+        OrbiState.handsEnabled.value = sp.getBoolean(HANDS, true)
+        scope.launch { OrbiState.handsEnabled.drop(1).collect { v -> sp.edit { putBoolean(HANDS, v) } } }
+        OrbiState.onlineSpeech.value = sp.getBoolean(ONLINE_SPEECH, true)
+        scope.launch { OrbiState.onlineSpeech.drop(1).collect { v -> sp.edit { putBoolean(ONLINE_SPEECH, v) } } }
         scope.launch { OrbiState.bubbleMode.drop(1).collect { v -> sp.edit { putString(MODE, v.name) } } }
         scope.launch { OrbiState.floatSizeDp.drop(1).collect { v -> sp.edit { putFloat(FLOAT_SIZE, v) } } }
         scope.launch { OrbiState.barHeightDp.drop(1).collect { v -> sp.edit { putFloat(BAR_HEIGHT, v) } } }

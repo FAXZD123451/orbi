@@ -272,6 +272,23 @@ object MoodEngine {
         play(Sfx.DIZZY, Step(Expression.DIZZY, 2200), Step(Expression.SAD, 800))
     }
 
+    /** Reconoció un gesto de tu mano (ver [com.orbi.app.vision.HandSense]). */
+    fun onGesture(gesture: String) {
+        val wasAsleep = isDozing()
+        touch()
+        when (gesture) {
+            "Thumb_Up" -> { cue(CueType.NOD); play(Sfx.HAPPY, Step(Expression.HAPPY, 1500)) }         // 👍 ¡bien!
+            "Thumb_Down" -> { cue(CueType.HEAD_SHAKE); play(null, Step(Expression.SAD, 1500)) }       // 👎 ups
+            "Open_Palm" -> play(Sfx.HAPPY,                                                             // ✋ hola
+                if (wasAsleep) Step(Expression.SURPRISED, 500) else Step(Expression.HAPPY, 400),
+                Step(Expression.WINK, 700), Step(Expression.HAPPY, 800))
+            "Victory" -> { OrbiState.winkSide.value = 1; play(Sfx.WINK, Step(Expression.WINK, 1000), Step(Expression.HAPPY, 600)) } // ✌️
+            "Closed_Fist" -> play(Sfx.SURPRISED, Step(Expression.SURPRISED, 600), Step(Expression.ANGRY, 900), Step(Expression.HAPPY, 700)) // ✊ ¡choca!
+            "Pointing_Up" -> { play(Sfx.SURPRISED, Step(Expression.SURPRISED, 900)); glanceAway(Offset(0f, -1f), 1200) } // ☝️ ¿qué hay arriba?
+            "ILoveYou" -> play(Sfx.PURR, Step(Expression.PURR, 1800), Step(Expression.HAPPY, 800))    // 🤟 cariño
+        }
+    }
+
     /** Mira un momento hacia [where] y luego vuelve. */
     private fun glanceAway(where: Offset, ms: Long) {
         hintJob?.cancel()

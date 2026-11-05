@@ -68,6 +68,16 @@ object OrbiState {
     /** Progreso al copiar el modelo de Gemma (0..1), o null si no se está copiando. */
     val brainCopyProgress = MutableStateFlow<Float?>(null)
 
+    // ---- Manos y entorno ----
+    val handsEnabled = MutableStateFlow(true)
+    val handVisible = MutableStateFlow(false)
+    /** Dónde está tu mano (-1..1): si no ve tu cara, Orbi mira tu mano. */
+    val handLook = MutableStateFlow(Offset.Zero)
+    /** Último gesto reconocido (para el modo creador). */
+    val lastGesture = MutableStateFlow("")
+    /** Usar el reconocimiento de voz de Google en línea si no hay uno dentro del celular. */
+    val onlineSpeech = MutableStateFlow(true)
+
     // ---- Modo creador (depuración en vivo; nada de esto se guarda) ----
     val creatorMode = MutableStateFlow(false)
     val debugFrame = MutableStateFlow<com.orbi.app.vision.DebugFrame?>(null)

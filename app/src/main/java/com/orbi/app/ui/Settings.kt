@@ -61,6 +61,8 @@ fun SettingsContent(actions: SettingsActions) {
     val mode by OrbiState.bubbleMode.collectAsState()
     val floatSize by OrbiState.floatSizeDp.collectAsState()
     val barHeight by OrbiState.barHeightDp.collectAsState()
+    val hands by OrbiState.handsEnabled.collectAsState()
+    val onlineSpeech by OrbiState.onlineSpeech.collectAsState()
 
     Column(
         Modifier
@@ -88,6 +90,12 @@ fun SettingsContent(actions: SettingsActions) {
             }
             Divider()
             ToggleRow("Responder a «Oye Orbi»", "Escucha solo para detectar su nombre; no graba nada.", voice, actions.onToggleVoice)
+            Divider()
+            ToggleRow(
+                "Reconocimiento de Google en línea",
+                "Si tu celular no entiende la voz por sí solo, usa Google (más preciso; el audio de tu pregunta va a Google).",
+                onlineSpeech,
+            ) { OrbiState.onlineSpeech.value = it }
         }
 
         // ---------- Presencia ----------
@@ -101,6 +109,10 @@ fun SettingsContent(actions: SettingsActions) {
                 },
                 tracking, actions.onToggleTracking,
             )
+            Divider()
+            ToggleRow("Ver tus manos", "Reacciona a 👍 👎 ✋ ✊ ✌️ ☝️ 🤟. Se procesa en tu celular.", hands) {
+                OrbiState.handsEnabled.value = it
+            }
             Divider()
             ToggleRow("Sonidos", "Bips y chirridos cuando reacciona.", sound) { OrbiState.soundEnabled.value = it }
             Divider()

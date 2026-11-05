@@ -35,6 +35,10 @@ android {
     buildFeatures {
         compose = true
     }
+    // MediaPipe lee los modelos .task directo de la APK: no deben ir comprimidos.
+    androidResources {
+        noCompress += "task"
+    }
 }
 
 dependencies {
@@ -56,6 +60,9 @@ dependencies {
     implementation(libs.jna) { artifact { type = "aar" } }
     // Cerebro: Gemma funcionando en el celular (MediaPipe LLM Inference).
     implementation(libs.mediapipe.genai)
+    // Ojos extra: gestos de las manos (MediaPipe) y objetos del entorno (ML Kit), en el celular.
+    implementation(libs.mediapipe.vision)
+    implementation(libs.mlkit.image.labeling)
     debugImplementation(libs.androidx.compose.ui.tooling)
     testImplementation(libs.junit)
 }

@@ -3,6 +3,9 @@ package com.orbi.app.vision
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Matrix
+import android.graphics.PointF
 import android.os.SystemClock
 import android.util.Log
 import android.util.Size
@@ -103,6 +106,15 @@ object FaceTracker {
     private val yawSwing = Swing(amplitude = 14f)
     private var lastLog = 0L
 
+    @Volatile private var appContext: Context? = null
+    private var lastHands = 0L
+    private var lastScene = 0L
+    private const val HAND_MS = 250L
+    private const val SCENE_MS = 1000L
+
+    /** ¿La cámara está funcionando ahora mismo? (para saber si puede responder "¿qué ves?"). */
+    val isRunning: Boolean get() = SystemClock.elapsedRealtime() - lastFrame < 2000
+
     // ---- Modo creador ----
     /** Si se pone, la cámara también muestra su imagen en esa vista (solo en el modo creador). */
     var previewProvider: Preview.SurfaceProvider? = null
@@ -127,6 +139,7 @@ object FaceTracker {
     /** Vuelve a evaluar (por ejemplo, tras dar el permiso o activar/desactivar el seguimiento). */
     fun rebind(context: Context) {
         val app = context.applicationContext
+        appContext = app
         OrbiState.cameraAllowed.value = hasPermission(app)
         val future = ProcessCameraProvider.getInstance(app)
         future.addListener({
@@ -171,7 +184,9 @@ object FaceTracker {
     private fun analyze(proxy: ImageProxy) {
         val now = SystemClock.elapsedRealtime()
         val media = proxy.image
-        val interval = if (now - lastFaceAt < IDLE_AFTER_MS || covered) MIN_FRAME_MS else IDLE_FRAME_MS
+        val active = now - lastFaceAt < IDLE_AFTER_MS || covered || OrbiState.handVisible.value ||
+            OrbiState.creatorMode.value || SceneSense.pending
+        val interval = if (active) MIN_FRAME_MS else IDLE_FRAME_MS
         if (media == null || now - lastFrame < interval) {
             proxy.close()
             return
@@ -181,9 +196,27 @@ object FaceTracker {
         val rotation = proxy.imageInfo.rotationDegrees
         val (w, h) = if (rotation % 180 == 0) proxy.width to proxy.height else proxy.height to proxy.width
         val light = luminance(proxy)
+
+        // Manos (4 veces por segundo) y entorno (solo si alguien lo pidió o en el modo creador).
+        val ctx = appContext
+        val wantHands = OrbiState.handsEnabled.value && now - lastHands >= HAND_MS
+        val wantScene = SceneSense.pending || (OrbiState.creatorMode.value && now - lastScene >= SCENE_MS)
+        if (ctx != null && (wantHands || wantScene)) {
+            val upright = uprightBitmap(proxy, rotation)
+            if (wantHands) { lastHands = now; HandSense.analyze(ctx, upright) }
+            if (wantScene) { lastScene = now; SceneSense.analyze(upright) }
+        }
         detector.process(InputImage.fromMediaImage(media, rotation))
             .addOnSuccessListener { faces -> onFaces(faces, w.toFloat(), h.toFloat(), light) }
             .addOnCompleteListener { proxy.close() }
+    }
+
+    /** El cuadro de la cámara como imagen, ya girada para que la cara quede derecha. */
+    private fun uprightBitmap(proxy: ImageProxy, rotation: Int): Bitmap {
+        val raw = proxy.toBitmap()
+        if (rotation == 0) return raw
+        val m = Matrix().apply { postRotate(rotation.toFloat()) }
+        return Bitmap.createBitmap(raw, 0, 0, raw.width, raw.height, m, true)
     }
 
     /** Brillo medio de la imagen (0-255), muestreando 1 de cada 32 píxeles del canal de luz. */
@@ -298,6 +331,10 @@ object FaceTracker {
             light = light,
             fps = fps,
             analysisMs = now - frameStart,
+            // Puntos de las manos: MediaPipe los da en 0..1; se pasan a píxeles de la imagen.
+            hands = HandSense.lastLandmarks.map { hand -> hand.map { PointF(it.x * w, it.y * h) } },
+            gestures = HandSense.lastGestures,
+            labels = SceneSense.lastLabels,
         )
     }
 

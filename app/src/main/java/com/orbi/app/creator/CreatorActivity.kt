@@ -179,7 +179,24 @@ private fun DrawScope.drawAnalysis(f: DebugFrame) {
     polyline(f.faceOval, Color.White.copy(alpha = 0.45f), closed = true)
     f.eyes.forEach { polyline(it, Color(0xFF7FD8FF), closed = true) }
     f.lips.forEach { polyline(it, Palette.Ok, closed = false) }
+
+    // Manos: el "esqueleto" de 21 puntos (muñeca, nudillos y puntas de los dedos).
+    val handColor = Color(0xFFFFB224)
+    f.hands.forEach { hand ->
+        if (hand.size < 21) return@forEach
+        HAND_LINKS.forEach { (a, b) -> drawLine(handColor, map(hand[a]), map(hand[b]), stroke) }
+        hand.forEach { drawCircle(Color.White, 3.dp.toPx(), map(it)) }
+    }
 }
+
+/** Conexiones entre los 21 puntos de la mano (pulgar, índice, medio, anular, meñique y palma). */
+private val HAND_LINKS = listOf(
+    0 to 1, 1 to 2, 2 to 3, 3 to 4,
+    0 to 5, 5 to 6, 6 to 7, 7 to 8,
+    5 to 9, 9 to 10, 10 to 11, 11 to 12,
+    9 to 13, 13 to 14, 14 to 15, 15 to 16,
+    13 to 17, 17 to 18, 18 to 19, 19 to 20, 0 to 17,
+)
 
 @Composable
 private fun DataPanel(f: DebugFrame?) {
@@ -196,6 +213,7 @@ private fun DataPanel(f: DebugFrame?) {
     val roomDark by OrbiState.roomDark.collectAsState()
     val hearing by OrbiState.earHearing.collectAsState()
     val heard by OrbiState.lastHeard.collectAsState()
+    val lastGesture by OrbiState.lastGesture.collectAsState()
 
     // Los sensores no son flujos: se leen 5 veces por segundo.
     var lux by remember { mutableFloatStateOf(0f) }
@@ -245,6 +263,16 @@ private fun DataPanel(f: DebugFrame?) {
             Metric("boca", f?.mouthRatio?.let { "%.3f".format(it) } ?: "–", on = mouthOpen, note = "abre > 0,07")
             Metric("tamaño cara", f?.widthRatio?.let { "%.2f".format(it) } ?: "–", note = "cerca > 0,55")
             Metric("cabeza X/Y/Z", f?.let { "%+.0f° %+.0f° %+.0f°".format(it.headX, it.headY, it.headZ) } ?: "–")
+        }
+        Group("Manos") {
+            Metric("manos", f?.hands?.size?.toString() ?: "–")
+            Metric("gestos", f?.gestures?.joinToString("  ")?.ifBlank { "–" } ?: "–")
+            Metric("último gesto", lastGesture.ifBlank { "–" })
+        }
+        Group("Entorno") {
+            val labels = f?.labels.orEmpty()
+            if (labels.isEmpty()) Metric("objetos", "–")
+            labels.forEach { (name, conf) -> Metric(name, "%.0f %%".format(conf * 100)) }
         }
         Group("Oído") {
             Metric("escuchando", hearing.ifBlank { "…" })
