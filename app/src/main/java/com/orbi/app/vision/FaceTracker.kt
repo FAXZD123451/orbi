@@ -11,6 +11,7 @@ import androidx.camera.core.CameraSelector
 import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
+import androidx.camera.core.Preview
 import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -102,6 +103,13 @@ object FaceTracker {
     private val yawSwing = Swing(amplitude = 14f)
     private var lastLog = 0L
 
+    // ---- Modo creador ----
+    /** Si se pone, la cámara también muestra su imagen en esa vista (solo en el modo creador). */
+    var previewProvider: Preview.SurfaceProvider? = null
+    @Volatile private var frameStart = 0L
+    private var fps = 0f
+    private var lastFrameDone = 0L
+
     fun hasPermission(context: Context) =
         ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
 
@@ -142,7 +150,14 @@ object FaceTracker {
                 .build()
             analysis.setAnalyzer(executor, ::analyze)
             try {
-                provider.bindToLifecycle(owner, CameraSelector.DEFAULT_FRONT_CAMERA, analysis)
+                val preview = previewProvider?.let { surface ->
+                    Preview.Builder().build().also { it.surfaceProvider = surface }
+                }
+                if (preview != null) {
+                    provider.bindToLifecycle(owner, CameraSelector.DEFAULT_FRONT_CAMERA, preview, analysis)
+                } else {
+                    provider.bindToLifecycle(owner, CameraSelector.DEFAULT_FRONT_CAMERA, analysis)
+                }
                 // La cámara acaba de abrirse: si no te ve todavía, empieza a buscarte.
                 if (!OrbiState.faceVisible.value) startSearching(SystemClock.elapsedRealtime())
             } catch (e: Exception) {
@@ -162,6 +177,7 @@ object FaceTracker {
             return
         }
         lastFrame = now
+        frameStart = now
         val rotation = proxy.imageInfo.rotationDegrees
         val (w, h) = if (rotation % 180 == 0) proxy.width to proxy.height else proxy.height to proxy.width
         val light = luminance(proxy)
@@ -194,6 +210,9 @@ object FaceTracker {
 
     private fun onFaces(faces: List<Face>, w: Float, h: Float, light: Int) {
         val now = SystemClock.elapsedRealtime()
+        if (lastFrameDone > 0) fps = fps * 0.8f + (1000f / (now - lastFrameDone).coerceAtLeast(1)) * 0.2f
+        lastFrameDone = now
+        if (OrbiState.creatorMode.value) publishDebug(faces, w, h, light, now)
         watchCover(now, light)
 
         val face = faces.maxByOrNull { it.boundingBox.width() * it.boundingBox.height() }
@@ -249,6 +268,37 @@ object FaceTracker {
             Log.d(TAG, "cara x=%.2f y=%.2f sonrisa=%.2f(%s) ojos=%.2f/%.2f boca=%s cerca=%s luz=%d".format(
                 nx, ny, smileProb, smile.value, left ?: -1f, right ?: -1f, mouth.value, near.value, light))
         }
+    }
+
+    /** Modo creador: publica todo lo calculado en este cuadro para dibujarlo encima de la cámara. */
+    private fun publishDebug(faces: List<Face>, w: Float, h: Float, light: Int, now: Long) {
+        val face = faces.maxByOrNull { it.boundingBox.width() * it.boundingBox.height() }
+        fun pts(type: Int) = face?.getContour(type)?.points.orEmpty()
+        val upper = pts(FaceContour.UPPER_LIP_BOTTOM)
+        val lower = pts(FaceContour.LOWER_LIP_TOP)
+        val mouthRatio = if (face != null && upper.isNotEmpty() && lower.isNotEmpty()) {
+            (lower[lower.size / 2].y - upper[upper.size / 2].y) / face.boundingBox.height()
+        } else null
+        OrbiState.debugFrame.value = DebugFrame(
+            imageW = w, imageH = h, faces = faces.size,
+            box = face?.boundingBox?.let { android.graphics.RectF(it) },
+            faceOval = pts(FaceContour.FACE),
+            lips = listOf(
+                pts(FaceContour.UPPER_LIP_TOP), upper, lower, pts(FaceContour.LOWER_LIP_BOTTOM),
+            ).filter { it.isNotEmpty() },
+            eyes = listOf(pts(FaceContour.LEFT_EYE), pts(FaceContour.RIGHT_EYE)).filter { it.isNotEmpty() },
+            smile = face?.smilingProbability,
+            leftEye = face?.leftEyeOpenProbability,
+            rightEye = face?.rightEyeOpenProbability,
+            headX = face?.headEulerAngleX ?: 0f,
+            headY = face?.headEulerAngleY ?: 0f,
+            headZ = face?.headEulerAngleZ ?: 0f,
+            mouthRatio = mouthRatio,
+            widthRatio = face?.let { it.boundingBox.width() / w },
+            light = light,
+            fps = fps,
+            analysisMs = now - frameStart,
+        )
     }
 
     // ---------- Detecciones ----------

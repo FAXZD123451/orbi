@@ -68,6 +68,12 @@ object OrbiState {
     /** Progreso al copiar el modelo de Gemma (0..1), o null si no se está copiando. */
     val brainCopyProgress = MutableStateFlow<Float?>(null)
 
+    // ---- Modo creador (depuración en vivo; nada de esto se guarda) ----
+    val creatorMode = MutableStateFlow(false)
+    val debugFrame = MutableStateFlow<com.orbi.app.vision.DebugFrame?>(null)
+    /** Lo que el oído va entendiendo mientras espera "Oye Orbi" (solo con el modo creador abierto). */
+    val earHearing = MutableStateFlow("")
+
     // ---- Preferencias y pantallas ----
     val soundEnabled = MutableStateFlow(true)
     val bubbleVisible = MutableStateFlow(false)

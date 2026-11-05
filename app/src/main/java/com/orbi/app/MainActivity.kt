@@ -27,6 +27,7 @@ import androidx.lifecycle.lifecycleScope
 import com.orbi.app.assistant.Assistant
 import com.orbi.app.assistant.LocalBrain
 import com.orbi.app.brain.MoodEngine
+import com.orbi.app.creator.CreatorActivity
 import com.orbi.app.night.NightActivity
 import com.orbi.app.onboarding.OnboardingScreen
 import com.orbi.app.onboarding.OnboardingStep
@@ -102,6 +103,17 @@ class MainActivity : ComponentActivity() {
                 onInstallBrain = { pickBrain.launch(arrayOf("*/*")) },
                 onShowWelcome = { showWelcome() },
             ),
+            onCreatorMode = {
+                creatorToast?.cancel()
+                startActivity(Intent(this, CreatorActivity::class.java))
+            },
+            onCreatorHint = { left ->
+                creatorToast?.cancel()
+                creatorToast = Toast.makeText(
+                    this, if (left == 1) "Falta 1 toque para el modo creador" else "Faltan $left toques para el modo creador",
+                    Toast.LENGTH_SHORT,
+                ).also { it.show() }
+            },
         )
 
         setContent {
@@ -120,6 +132,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private var creatorToast: Toast? = null
     private var welcomeRequest: () -> Unit = {}
     private fun showWelcome() = welcomeRequest()
 

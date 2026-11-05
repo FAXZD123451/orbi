@@ -31,6 +31,10 @@ object MotionSense : SensorEventListener {
         private set
     private var downSince = 0L
     private var lux = -1f
+    /** Luz ambiente suavizada (lux), para el modo creador. */
+    val currentLux get() = lux
+    /** Gravedad en el eje Z (negativa = pantalla hacia abajo), para el modo creador. */
+    val gravityZ get() = gravity[2]
     private var darkSince = 0L
 
     private const val FREE_FALL = 2.5f        // m/s²: casi sin peso

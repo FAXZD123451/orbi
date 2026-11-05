@@ -77,6 +77,10 @@ class HomeActions(
     val onNightMode: () -> Unit,
     val onToggleBubble: () -> Unit,
     val settings: SettingsActions,
+    /** Se cumplieron los 7 toques sobre "ORBI": abrir el modo creador. */
+    val onCreatorMode: () -> Unit,
+    /** Faltan [left] toques para el modo creador. */
+    val onCreatorHint: (left: Int) -> Unit,
 )
 
 /**
@@ -101,9 +105,27 @@ fun HomeScreen(actions: HomeActions) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 CircleIconButton(onClick = actions.onNightMode) { MoonIcon(Palette.Dim, Palette.Raised) }
+                // Entrada secreta al modo creador: 7 toques seguidos sobre el nombre.
+                var taps by remember { mutableStateOf(0) }
+                var lastTap by remember { mutableStateOf(0L) }
                 Text(
                     "ORBI", color = Palette.Dim, fontSize = 13.sp,
                     fontWeight = FontWeight.Medium, letterSpacing = 6.sp,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) {
+                            val now = System.currentTimeMillis()
+                            taps = if (now - lastTap < 1500) taps + 1 else 1
+                            lastTap = now
+                            when {
+                                taps >= 7 -> { taps = 0; actions.onCreatorMode() }
+                                taps >= 3 -> actions.onCreatorHint(7 - taps)
+                            }
+                        }
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
                 )
                 CircleIconButton(onClick = { showSettings = true }) { TuneIcon(Palette.Dim, Palette.Raised) }
             }

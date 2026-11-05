@@ -49,6 +49,7 @@ dependencies {
     // Cámara frontal + detección de caras en el propio celular (sin internet).
     implementation(libs.androidx.camera.camera2)
     implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.androidx.camera.view) // vista previa del modo creador
     implementation(libs.mlkit.face.detection)
     // Oído: reconocimiento de voz en el celular (Vosk). JNA va como .aar para Android.
     implementation(libs.vosk.android) { artifact { type = "aar" }; exclude(group = "net.java.dev.jna") }

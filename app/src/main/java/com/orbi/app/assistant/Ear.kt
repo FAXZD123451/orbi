@@ -126,7 +126,12 @@ object Ear {
             }
         }
 
-        override fun onPartialResult(hypothesis: String?) = check(textOf(hypothesis, "partial"), final = false)
+        override fun onPartialResult(hypothesis: String?) {
+            val text = textOf(hypothesis, "partial")
+            // Modo creador: muestra en vivo lo que va entendiendo (no se guarda en ningún lado).
+            if (OrbiState.creatorMode.value && text.isNotBlank()) OrbiState.earHearing.value = text
+            check(text, final = false)
+        }
         override fun onResult(hypothesis: String?) = check(textOf(hypothesis, "text"), final = true)
         override fun onFinalResult(hypothesis: String?) = check(textOf(hypothesis, "text"), final = true)
         override fun onError(exception: Exception?) { Log.w(TAG, "error escuchando", exception) }
