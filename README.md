@@ -11,7 +11,19 @@ Un asistente robot para Android que vive en tu pantalla. Flota sobre cualquier a
   <img src="docs/despierto.png" width="270" alt="Orbi despierto y feliz" />
 </p>
 
-> **Estado:** v0.2. Cara, burbuja flotante, modo noche, cerebro de emociones, cámara, sensores, sonidos y bienvenida guiada.
+> **Estado:** v0.4. Asistente de voz **100 % en el celular** ("Oye Orbi" + Gemma), cara, isla superior, modo noche, cerebro de emociones, cámara y sensores.
+
+## Asistente de voz (sin internet)
+
+```
+"Oye Orbi" ─► Vosk (reconocimiento de voz en el celular) ─► "¿Sí?" ─► tu pregunta
+     ─► ¿orden rápida? (hora, fecha, recordatorios, modo noche)  ─┐
+     ─► si no: Gemma 3 1B con MediaPipe (en el celular)          ─┴─► responde hablando, con la boca animada
+```
+
+- **Gratis y privado:** ni el audio ni tus preguntas salen del teléfono.
+- **Recordatorios:** "recuérdame tomar agua en diez minutos" o "…a las cinco de la tarde" (alarma del sistema).
+- **Modelos aparte** (no van en el repo): el de voz de [Vosk en español](https://alphacephei.com/vosk/models) y [Gemma 3 1B](https://huggingface.co/litert-community/Gemma3-1B-IT) (`gemma3-1b-it-int4.task`, requiere aceptar la licencia de Gemma). El cerebro se instala desde Ajustes → Instalar cerebro.
 
 ## Qué puede hacer
 
@@ -86,8 +98,9 @@ Permisos que pide: **Mostrar sobre otras apps** (burbuja), **Cámara** (mirada),
 - [x] v0.1: cara animada, burbuja, modo noche, cerebro de emociones, cámara, sensores y sonidos
 - [x] v0.2: bienvenida guiada, preferencias guardadas, posición de la burbuja, vuelve tras reiniciar, boca abajo = siesta, luz del cuarto, boca abierta, sí/no con la cabeza, transiciones con personalidad, modo ahorro de cámara
 - [x] v0.3: detección estable (filtros de tiempo), isla compacta que se expande, animación de búsqueda, 7 acciones nuevas
-- [ ] Voz y cerebro con Claude
-- [ ] Recordatorios y tareas
+- [x] v0.4: asistente de voz sin internet (Vosk + Gemma), recordatorios, interfaz minimalista y un solo Orbi a la vez
+- [ ] Frases grabadas con voz de ElevenLabs
+- [ ] Tareas y lista de pendientes
 - [ ] Leer y responder mensajes (con confirmación)
 - [ ] Vigilancia nocturna
 

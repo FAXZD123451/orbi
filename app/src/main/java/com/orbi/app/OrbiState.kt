@@ -77,4 +77,6 @@ object OrbiState {
     /** Alto de la barra superior, en dp (incluye la zona de la barra de estado). */
     val barHeightDp = MutableStateFlow(150f)
     val nightMode = MutableStateFlow(false)
+    /** La app está abierta en primer plano: Orbi ya está ahí, la isla se esconde (solo existe un Orbi). */
+    val appVisible = MutableStateFlow(false)
 }

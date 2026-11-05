@@ -25,6 +25,7 @@ import android.view.ScaleGestureDetector
 import android.view.VelocityTracker
 import android.view.animation.OvershootInterpolator
 import com.orbi.app.BubbleMode
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.drop
 import android.view.View
 import android.view.ViewConfiguration
@@ -112,11 +113,20 @@ class BubbleService : Service() {
         // Y escucha por si le dices "Oye Orbi".
         if (micGranted) { Assistant.attach(this); listening = true }
 
-        // En modo noche la cara ocupa toda la pantalla: la burbuja se esconde.
+        // Solo existe un Orbi: con la app abierta o en modo noche, la burbuja se esconde.
         scope.launch {
-            OrbiState.nightMode.collect { night ->
-                bubble?.visibility = if (night) View.GONE else View.VISIBLE
-            }
+            combine(OrbiState.nightMode, OrbiState.appVisible) { night, app -> night || app }
+                .collect { hidden ->
+                    val view = bubble ?: return@collect
+                    if (hidden) {
+                        view.visibility = View.GONE
+                    } else if (view.visibility != View.VISIBLE) {
+                        // Vuelve a aparecer con una entrada suave.
+                        view.alpha = 0f
+                        view.visibility = View.VISIBLE
+                        view.animate().alpha(1f).setDuration(250).start()
+                    }
+                }
         }
         // Cambiaste de forma en la app (flotante ↔ barra superior): se vuelve a construir.
         scope.launch {
@@ -357,6 +367,7 @@ class BubbleService : Service() {
             setOnTouchListener(TopBarTouch())
             translationY = -compactH.toFloat()
         }
+        if (OrbiState.appVisible.value || OrbiState.nightMode.value) view.visibility = View.GONE
         wm.addView(view, bubbleParams)
         bubble = view
         // Entra deslizándose desde arriba y se presenta expandida un momento.
@@ -387,6 +398,7 @@ class BubbleService : Service() {
             }
             setOnTouchListener(BubbleTouch())
         }
+        if (OrbiState.appVisible.value || OrbiState.nightMode.value) view.visibility = View.GONE
         wm.addView(view, bubbleParams)
         bubble = view
     }

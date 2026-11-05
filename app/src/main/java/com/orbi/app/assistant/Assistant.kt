@@ -63,10 +63,14 @@ object Assistant {
         if (!::app.isInitialized) return
         LocalBrain.isInstalled(app)
         if (!OrbiState.voiceEnabled.value || !hasMic(app) || hosts == 0) {
+            android.util.Log.d("Assistant", "no escucho: voz=${OrbiState.voiceEnabled.value} mic=${hasMic(app)} pantallas=$hosts")
             if (OrbiState.assistant.value == AssistantState.IDLE) Ear.stop()
             return
         }
-        if (!Ear.isInstalled(app)) return
+        if (!Ear.isInstalled(app)) {
+            android.util.Log.d("Assistant", "no escucho: falta el modelo de voz en ${Ear.modelDir(app)}")
+            return
+        }
         Ear.load(app) { ok -> if (ok && OrbiState.assistant.value == AssistantState.IDLE) waitForWakeWord() }
     }
 

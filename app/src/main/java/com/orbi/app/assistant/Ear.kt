@@ -40,7 +40,8 @@ object Ear {
     /** Se llama con tu frase completa (vacía si no dijiste nada a tiempo). */
     var onCommand: ((text: String) -> Unit)? = null
 
-    fun modelDir(context: Context) = File(context.getExternalFilesDir(null), "models/vosk-es")
+    /** En la memoria interna de la app (le pertenece siempre y nadie más puede leerla). */
+    fun modelDir(context: Context) = File(context.filesDir, "models/vosk-es")
     fun isInstalled(context: Context) = File(modelDir(context), "am/final.mdl").exists()
 
     /** Carga el modelo en segundo plano (tarda un par de segundos la primera vez). */
@@ -50,6 +51,7 @@ object Ear {
         loader.execute {
             val ok = try {
                 model = Model(dir.absolutePath)
+                Log.d(TAG, "modelo de voz cargado")
                 true
             } catch (e: Exception) {
                 Log.w(TAG, "No se pudo cargar el modelo de Vosk", e)
@@ -62,7 +64,10 @@ object Ear {
         }
     }
 
-    fun listenForWake() = start(command = false)
+    fun listenForWake() {
+        Log.d(TAG, "esperando \"Oye Orbi\"")
+        start(command = false)
+    }
 
     fun listenForCommand() = start(command = true)
 
@@ -103,6 +108,8 @@ object Ear {
         private fun check(text: String, final: Boolean) {
             if (fired || text.isBlank()) return
             val clean = normalize(text)
+            // Solo en el registro del propio celular, para afinar cómo entiende "Orbi".
+            if (final) Log.d(TAG, "oí (esperando la palabra clave): \"$clean\"")
             val match = WAKE.find(clean) ?: return
             // En resultados parciales se espera al final de la frase si dijo algo más después.
             val rest = clean.substring(match.range.last + 1).trim()

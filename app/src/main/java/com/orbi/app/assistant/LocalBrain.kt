@@ -36,7 +36,8 @@ object LocalBrain {
     private var llm: LlmInference? = null
     private val history = ArrayDeque<Pair<String, String>>()
 
-    fun modelFile(context: Context) = File(context.getExternalFilesDir(null), "models/gemma.task")
+    /** En la memoria interna de la app: siempre es suya, así puede escribir el modelo al instalarlo. */
+    fun modelFile(context: Context) = File(context.filesDir, "models/gemma.task")
 
     fun isInstalled(context: Context): Boolean {
         val f = modelFile(context)
