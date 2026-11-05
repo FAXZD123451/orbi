@@ -33,6 +33,12 @@ object OrbiState {
     val headTilt = MutableStateFlow(0f)
     /** Tienes la boca abierta (Orbi se sorprende contigo). */
     val mouthOpen = MutableStateFlow(false)
+    /** Tienes los dos ojos cerrados un rato (Orbi se adormece contigo). */
+    val userEyesClosed = MutableStateFlow(false)
+    /** La cámara está activa pero todavía no te encuentra: Orbi te busca con la mirada. */
+    val searching = MutableStateFlow(false)
+    /** Algo quiere que la isla superior se expanda un momento (por ejemplo, una notificación). */
+    val attention = MutableStateFlow(0L)
     val trackingEnabled = MutableStateFlow(true)
     val cameraAllowed = MutableStateFlow(false)
 

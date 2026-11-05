@@ -51,6 +51,7 @@ object MoodEngine {
     private var lastInteraction = now()
     private var lastFaceSeen = 0L
     private var hadFace = false
+    private var lastSearching = false
     private var nextIdleMood = now() + Random.nextLong(20_000, 45_000)
     private var petting = false
     private var lastPetMove = 0L
@@ -164,6 +165,7 @@ object MoodEngine {
     /** Llegó una notificación de otra app: se sorprende y mira hacia arriba, donde aparece. */
     fun onNotification() {
         if (OrbiState.nightMode.value) return
+        OrbiState.attention.value = now() // la isla superior se expande para avisarte
         play(Sfx.NOTIFY, Step(Expression.SURPRISED, 900), Step(Expression.NEUTRAL, 900))
         hintJob?.cancel()
         hintJob = scope.launch {
@@ -230,6 +232,55 @@ object MoodEngine {
         OrbiState.cue.value = Cue(type, ++cueId)
     }
 
+    /** Bostezaste frente a él: los bostezos se contagian. */
+    fun onYawnSeen() {
+        touch()
+        play(Sfx.YAWN, Step(Expression.SURPRISED, 400), Step(Expression.DROWSY, 1800))
+    }
+
+    /** Te acercaste mucho a la pantalla: se echa para atrás, sorprendido. */
+    fun onTooClose() {
+        touch()
+        play(Sfx.SURPRISED, Step(Expression.SURPRISED, 900), Step(Expression.HAPPY, 800))
+    }
+
+    /** Lo miraste fijo un buen rato: le da vergüenza, sonríe y mira hacia otro lado. */
+    fun onStare() {
+        touch()
+        play(Sfx.WINK, Step(Expression.HAPPY, 1800))
+        glanceAway(Offset(if (Random.nextBoolean()) 1f else -1f, 0.4f), 1600)
+    }
+
+    /** "Toc, toc": golpecitos en el celular. Se pregunta quién es y mira a su alrededor. */
+    fun onKnock() {
+        val wasAsleep = isDozing()
+        touch()
+        play(Sfx.SURPRISED, Step(Expression.SURPRISED, 700), Step(if (wasAsleep) Expression.DROWSY else Expression.NEUTRAL, 900))
+        glanceAway(Offset(-1f, -0.5f), 500)
+    }
+
+    /** El celular está cayendo (o lo lanzaste al aire): grita asustado. */
+    fun onFreeFall() {
+        touch()
+        play(Sfx.WEE, Step(Expression.SCARED, 3000))
+    }
+
+    /** Aterrizó tras una caída: queda mareado. */
+    fun onLanded() {
+        touch()
+        play(Sfx.DIZZY, Step(Expression.DIZZY, 2200), Step(Expression.SAD, 800))
+    }
+
+    /** Mira un momento hacia [where] y luego vuelve. */
+    private fun glanceAway(where: Offset, ms: Long) {
+        hintJob?.cancel()
+        hintJob = scope.launch {
+            OrbiState.lookHint.value = where
+            delay(ms)
+            OrbiState.lookHint.value = null
+        }
+    }
+
     /** Se alegra por algo (por ejemplo, avanzar en la bienvenida). No cuenta como "toque". */
     fun cheer() {
         touch()
@@ -252,12 +303,39 @@ object MoodEngine {
         sound?.let(SoundFx::play)
     }
 
+    // ---- Ánimo de fondo estable: un cambio tiene que durar BG_HOLD_MS para aplicarse ----
+    private const val BG_HOLD_MS = 500L
+    /** Estos cambian al instante porque responden a algo que haces en ese momento. */
+    private val IMMEDIATE = setOf(Expression.PURR, Expression.SCARED)
+    private var bgCurrent = Expression.NEUTRAL
+    private var bgCandidate = Expression.NEUTRAL
+    private var bgSince = 0L
+
+    private fun stableBackground(t: Long): Expression {
+        val raw = background(t)
+        if (raw == bgCurrent) {
+            bgCandidate = raw
+            return bgCurrent
+        }
+        if (raw in IMMEDIATE) {
+            bgCurrent = raw
+            bgCandidate = raw
+            return raw
+        }
+        if (raw != bgCandidate) {
+            bgCandidate = raw
+            bgSince = t
+        }
+        if (t - bgSince >= BG_HOLD_MS) bgCurrent = raw
+        return bgCurrent
+    }
+
     private fun tick() {
         val t = now()
         watchFace(t)
 
         val reaction = currentReaction(t)
-        val expression = reaction ?: background(t)
+        val expression = reaction ?: stableBackground(t)
 
         if (reaction == null && expression == Expression.NEUTRAL && t >= nextIdleMood) idleMood()
         if (OrbiState.expression.value != expression) {
@@ -270,9 +348,14 @@ object MoodEngine {
     /** Si la cámara te acaba de ver aparecer, te saluda (o se despierta). */
     private fun watchFace(t: Long) {
         val face = OrbiState.faceVisible.value
+        val wasSearching = lastSearching
+        lastSearching = OrbiState.searching.value
         if (face && !hadFace && !OrbiState.nightMode.value && coveredSince == 0L) {
             if (isDozing()) {
                 play(Sfx.SURPRISED, Step(Expression.SURPRISED, 600), Step(Expression.HAPPY, 1400))
+            } else if (wasSearching) {
+                // Te estaba buscando y por fin te encontró: "¡ahí estás!".
+                play(Sfx.FOUND, Step(Expression.SURPRISED, 350), Step(Expression.HAPPY, 1300))
             } else if (t - lastFaceSeen > GREET_AFTER_ABSENCE_MS) {
                 play(Sfx.HAPPY, Step(Expression.HAPPY, 1400))
             }
@@ -300,6 +383,7 @@ object MoodEngine {
         }
         if (OrbiState.nightMode.value) return Expression.SLEEPING
         if (isIdle(t)) return Expression.SLEEPING
+        if (OrbiState.faceVisible.value && OrbiState.userEyesClosed.value) return Expression.DROWSY // se adormece contigo
         if (OrbiState.faceVisible.value && OrbiState.mouthOpen.value) return Expression.SURPRISED // te imita
         if (OrbiState.smiling.value) return Expression.HAPPY
         if (OrbiState.roomDark.value) return Expression.DROWSY

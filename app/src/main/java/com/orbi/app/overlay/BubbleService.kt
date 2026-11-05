@@ -39,6 +39,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -114,6 +115,8 @@ class BubbleService : Service() {
         // Cambiaste de forma en la app (flotante ↔ barra superior): se vuelve a construir.
         scope.launch {
             OrbiState.bubbleMode.drop(1).collect {
+                barAnimator?.cancel()
+                barHandler.removeCallbacks(collapseBar)
                 bubble?.let { wm.removeView(it) }
                 bubble = null
                 hideCloseTarget()
@@ -126,12 +129,17 @@ class BubbleService : Service() {
         }
         scope.launch {
             OrbiState.barHeightDp.drop(1).collect {
-                val view = bubble ?: return@collect
-                if (isTopBar && bubbleParams.height != barHeight) {
-                    bubbleParams.height = barHeight
-                    wm.updateViewLayout(view, bubbleParams)
+                // Al mover el control de tamaño en la app, la isla se abre para que veas cómo queda.
+                if (isTopBar && bubble != null) {
+                    barAnimator?.cancel()
+                    setBarFraction(1f)
+                    expandBarFor(BAR_STAY_MS)
                 }
             }
+        }
+        // Algo importante (una notificación): la isla se expande un momento para avisarte.
+        scope.launch {
+            OrbiState.attention.drop(1).collect { expandBarFor(3500) }
         }
     }
 
@@ -165,6 +173,8 @@ class BubbleService : Service() {
     }
 
     override fun onDestroy() {
+        barHandler.removeCallbacksAndMessages(null)
+        barAnimator?.cancel()
         FaceTracker.release(this, owner)
         scope.cancel()
         bubble?.let { wm.removeView(it) }
@@ -240,16 +250,59 @@ class BubbleService : Service() {
         return if (id > 0) resources.getDimensionPixelSize(id) else (24 * density).toInt()
     }
 
+    // ---------- Isla superior: compacta ↔ expandida ----------
+
+    /** 0 = isla compacta alrededor de la cámara, 1 = barra expandida a todo el ancho. */
+    private val barExpand = mutableFloatStateOf(0f)
+    private var barAnimator: ValueAnimator? = null
+    private val barHandler = Handler(Looper.getMainLooper())
+    private val collapseBar = Runnable { animateBar(0f) }
+    private val compactW get() = (COMPACT_W_DP * density).toInt().coerceAtMost(screenW)
+    private val compactH get() = statusBarHeight() + (COMPACT_LIP_DP * density).toInt()
+
+    /** Coloca la isla en un punto entre compacta (0) y expandida (1). */
+    private fun setBarFraction(f: Float, height: Int = lerp(compactH, barHeight, f)) {
+        val view = bubble ?: return
+        barExpand.floatValue = f
+        bubbleParams.width = lerp(compactW, screenW, f)
+        bubbleParams.height = height
+        bubbleParams.x = (screenW - bubbleParams.width) / 2
+        wm.updateViewLayout(view, bubbleParams)
+    }
+
+    private fun animateBar(to: Float) {
+        barAnimator?.cancel()
+        barAnimator = ValueAnimator.ofFloat(barExpand.floatValue, to).apply {
+            duration = if (to > 0.5f) 380 else 300
+            interpolator = if (to > 0.5f) OvershootInterpolator(0.9f) else android.view.animation.DecelerateInterpolator()
+            addUpdateListener { setBarFraction(it.animatedValue as Float) }
+            start()
+        }
+    }
+
+    /** Se expande y vuelve a encogerse sola tras [ms] sin tocarla. */
+    private fun expandBarFor(ms: Long) {
+        if (!isTopBar || bubble == null) return
+        if (barExpand.floatValue < 0.99f) animateBar(1f)
+        barHandler.removeCallbacks(collapseBar)
+        barHandler.postDelayed(collapseBar, ms)
+    }
+
+    private fun lerp(a: Int, b: Int, f: Float) = (a + (b - a) * f).toInt()
+
     /**
-     * Barra superior estilo "isla": todo el ancho, pegada arriba y con las esquinas de abajo
-     * redondeadas. Se dibuja por debajo de la barra de estado de Android, así que la hora y los
-     * íconos siguen viéndose encima y se pueden seguir bajando las notificaciones desde ahí.
+     * Isla superior: normalmente compacta, alrededor de la cámara frontal y dentro de la franja
+     * de la hora, para no tapar nada de las apps (como el buscador de arriba). Se expande a una
+     * barra de todo el ancho al tocarla, al deslizarla hacia abajo o cuando hay algo que contarte,
+     * y vuelve a encogerse sola. Se dibuja por debajo de la barra de estado de Android, así que la
+     * hora y los íconos siguen viéndose encima y se pueden seguir bajando las notificaciones.
      */
     @SuppressLint("ClickableViewAccessibility")
     private fun showTopBar() {
         val statusBar = statusBarHeight()
-        bubbleParams = overlayParams(WindowManager.LayoutParams.MATCH_PARENT, barHeight, touchable = true).apply {
-            x = 0
+        barExpand.floatValue = 0f
+        bubbleParams = overlayParams(compactW, compactH, touchable = true).apply {
+            x = (screenW - compactW) / 2
             y = 0
             flags = flags or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
             // Que también cubra la zona de la cámara frontal (el "notch" o agujero).
@@ -260,31 +313,35 @@ class BubbleService : Service() {
             }
         }
         val topInset = statusBar / density
+        val compactRadius = (compactH / density) / 2f
         val view = ComposeView(this).apply {
             owner.attach(this)
             setContent {
-                val shape = RoundedCornerShape(bottomStart = 30.dp, bottomEnd = 30.dp)
+                val f by barExpand
+                // Compacta: esquinas de abajo muy redondas (forma de píldora). Expandida: más suaves.
+                val radius = (compactRadius + (30f - compactRadius) * f).dp
+                val shape = RoundedCornerShape(bottomStart = radius, bottomEnd = radius)
                 Box(
                     Modifier
                         .fillMaxSize()
                         .clip(shape)
                         .background(Color.Black)
                 ) {
-                    // La cara va un poco por debajo de la barra de estado, con los ojos a los
-                    // lados de la cámara frontal (como en el boceto).
+                    // Compacta: los ojos quedan a los lados de la cámara frontal.
+                    // Expandida: la cara baja un poco, por debajo de la barra de estado.
                     LiveOrbiFace(
-                        Modifier.fillMaxSize().padding(top = (topInset * 0.55f).dp),
-                        zoom = 1.25f,
+                        Modifier.fillMaxSize().padding(top = (topInset * 0.55f * f).dp),
+                        zoom = 1.75f + (1.25f - 1.75f) * f,
                     )
                 }
             }
             setOnTouchListener(TopBarTouch())
-            translationY = -barHeight.toFloat()
+            translationY = -compactH.toFloat()
         }
         wm.addView(view, bubbleParams)
         bubble = view
-        // Entra deslizándose desde arriba.
-        view.animate().translationY(0f).setDuration(380).setInterpolator(OvershootInterpolator(0.8f)).start()
+        // Entra deslizándose desde arriba y se presenta expandida un momento.
+        view.animate().translationY(0f).setDuration(320).withEndAction { expandBarFor(2500) }.start()
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -442,17 +499,17 @@ class BubbleService : Service() {
     }
 
     /**
-     * Gestos de la barra superior:
-     *  - Tocar: reacciona. Doble toque: abre la app.
-     *  - Arrastrar hacia arriba o abajo: cambia el alto de la barra.
-     *  - Deslizar rápido hacia arriba: la oculta.
+     * Gestos de la isla superior:
+     *  - Tocar: se expande un momento y reacciona. Doble toque: abre la app.
+     *  - Deslizar hacia abajo: se expande siguiendo el dedo (y así eliges su alto).
+     *  - Expandida, deslizar rápido hacia arriba: se encoge. Compacta: se oculta.
      *  - Mantener quieto medio segundo y frotar: acariciar.
      */
     private inner class TopBarTouch : View.OnTouchListener {
         private val slop = ViewConfiguration.get(this@BubbleService).scaledTouchSlop
-        private val main = Handler(Looper.getMainLooper())
         private var downY = 0f
         private var startHeight = 0
+        private var startedCompact = true
         private var resizing = false
         private var petting = false
         private var velocity: VelocityTracker? = null
@@ -460,11 +517,19 @@ class BubbleService : Service() {
         private val maxH get() = (Prefs.BAR_HEIGHT_MAX * density).toInt()
 
         private val startPetting = Runnable {
-            if (!resizing) { petting = true; MoodEngine.onPetStart() }
+            if (!resizing) {
+                petting = true
+                expandBarFor(BAR_STAY_MS)
+                MoodEngine.onPetStart()
+            }
         }
 
         private val gestures = GestureDetector(this@BubbleService, object : GestureDetector.SimpleOnGestureListener() {
-            override fun onSingleTapConfirmed(e: MotionEvent): Boolean { MoodEngine.onTap(); return true }
+            override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+                expandBarFor(BAR_STAY_MS)
+                MoodEngine.onTap()
+                return true
+            }
             override fun onDoubleTap(e: MotionEvent): Boolean { openApp(); return true }
         }).apply { setIsLongpressEnabled(false) }
 
@@ -472,13 +537,16 @@ class BubbleService : Service() {
             if (!petting) gestures.onTouchEvent(e)
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
+                    barHandler.removeCallbacks(collapseBar) // mientras la tocas, no se encoge
+                    barAnimator?.cancel()
                     downY = e.rawY
                     startHeight = bubbleParams.height
+                    startedCompact = barExpand.floatValue < 0.5f
                     resizing = false
                     petting = false
                     velocity?.recycle()
                     velocity = VelocityTracker.obtain().also { it.addMovement(e) }
-                    main.postDelayed(startPetting, PET_DELAY_MS)
+                    barHandler.postDelayed(startPetting, PET_DELAY_MS)
                 }
                 MotionEvent.ACTION_MOVE -> {
                     velocity?.addMovement(e)
@@ -488,26 +556,39 @@ class BubbleService : Service() {
                     } else {
                         if (!resizing && kotlin.math.abs(dy) > slop) {
                             resizing = true
-                            main.removeCallbacks(startPetting)
+                            barHandler.removeCallbacks(startPetting)
                         }
                         if (resizing) {
-                            bubbleParams.height = (startHeight + dy.toInt()).coerceIn(minH, maxH)
-                            wm.updateViewLayout(v, bubbleParams)
+                            // Al bajar el dedo se abre a todo el ancho y el alto sigue al dedo.
+                            val h = (startHeight + dy.toInt()).coerceIn(compactH, maxH)
+                            val f = ((h - compactH).toFloat() / (minH - compactH).coerceAtLeast(1)).coerceIn(0f, 1f)
+                            setBarFraction(f, h)
                         }
                     }
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    main.removeCallbacks(startPetting)
+                    barHandler.removeCallbacks(startPetting)
                     velocity?.computeCurrentVelocity(1000)
                     val vy = velocity?.yVelocity ?: 0f
+                    val fastUp = vy < -HIDE_SPEED * density
                     when {
-                        petting -> MoodEngine.onPetEnd()
-                        resizing && vy < -HIDE_SPEED * density -> {
-                            // Deslizar rápido hacia arriba: se esconde subiendo.
+                        petting -> {
+                            MoodEngine.onPetEnd()
+                            expandBarFor(BAR_STAY_MS)
+                        }
+                        resizing && fastUp && startedCompact -> {
+                            // Compacta + deslizar rápido hacia arriba: se oculta.
                             v.animate().translationY(-v.height.toFloat()).setDuration(200)
                                 .withEndAction { closeByUser() }.start()
                         }
-                        resizing -> OrbiState.barHeightDp.value = bubbleParams.height / density
+                        resizing && (fastUp || bubbleParams.height < compactH + (40 * density).toInt()) -> {
+                            animateBar(0f) // se encoge
+                        }
+                        resizing -> {
+                            OrbiState.barHeightDp.value = bubbleParams.height.coerceAtLeast(minH) / density
+                            expandBarFor(BAR_STAY_MS)
+                        }
+                        barExpand.floatValue > 0.5f -> expandBarFor(BAR_STAY_MS)
                     }
                     resizing = false
                     petting = false
@@ -657,7 +738,10 @@ class BubbleService : Service() {
         private const val CLOSE_DP = 72
         private const val CLOSE_RADIUS_DP = 80
         private const val PET_DELAY_MS = 450L
-        private const val HIDE_SPEED = 1800f   // dp/s hacia arriba para ocultar la barra
+        private const val HIDE_SPEED = 1800f   // dp/s hacia arriba para encoger u ocultar la isla
+        private const val COMPACT_W_DP = 168   // ancho de la isla compacta
+        private const val COMPACT_LIP_DP = 22  // lo que asoma por debajo de la barra de estado (zona táctil)
+        private const val BAR_STAY_MS = 5000L  // tiempo expandida antes de encogerse sola
         private const val FLING_SPEED = 900f   // dp/s para que soltar cuente como lanzamiento
         private const val STOP_SPEED = 220f    // px/s: por debajo, deja de volar
         private const val BOUNCE = 0.72f       // energía que conserva al rebotar

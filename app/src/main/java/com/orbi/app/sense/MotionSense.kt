@@ -14,7 +14,8 @@ import kotlin.math.sqrt
 
 /**
  * Lee los sensores del celular:
- *  - Acelerómetro: sacudidas (se marea), inclinación (sus ojos "caen") y boca abajo (siesta).
+ *  - Acelerómetro: sacudidas (se marea), inclinación (sus ojos "caen"), boca abajo (siesta),
+ *    golpecitos "toc toc" y caída libre (grita y aterriza mareado).
  *  - Sensor de luz: si apagas la luz del cuarto, le da sueño; si la prendes, se sorprende.
  */
 object MotionSense : SensorEventListener {
@@ -31,6 +32,16 @@ object MotionSense : SensorEventListener {
     private var downSince = 0L
     private var lux = -1f
     private var darkSince = 0L
+
+    private const val FREE_FALL = 2.5f        // m/s²: casi sin peso
+    private const val FREE_FALL_MS = 120L
+    private const val LANDING = 18f           // golpe al aterrizar
+    private const val KNOCK_MIN = 5f          // golpecito: entre esto y JOLT
+    private var fallSince = 0L
+    private var falling = false
+    private var landingDeadline = 0L
+    private var lastKnockSpike = 0L
+    private var lastKnock = 0L
     private const val JOLT = 11f              // m/s² de aceleración (sin gravedad) para contar un "golpe"
     private const val JOLTS_FOR_SHAKE = 3
     private const val WINDOW_MS = 900L
@@ -105,6 +116,32 @@ object MotionSense : SensorEventListener {
                 OrbiState.faceDown.value = false
                 MoodEngine.onPickedUp()
             }
+        }
+
+        // Caída libre: en el aire el acelerómetro marca casi 0 (no hay nada que lo sostenga).
+        val total = sqrt(event.values[0].let { it * it } + event.values[1].let { it * it } + event.values[2].let { it * it })
+        if (total < FREE_FALL) {
+            if (fallSince == 0L) fallSince = now
+            if (!falling && now - fallSince > FREE_FALL_MS) {
+                falling = true
+                landingDeadline = now + 3000
+                MoodEngine.onFreeFall()
+            }
+        } else {
+            fallSince = 0L
+            if (falling && (total > LANDING || now > landingDeadline)) {
+                falling = false
+                MoodEngine.onLanded()
+            }
+        }
+
+        // "Toc, toc": dos golpecitos secos (más suaves que una sacudida) separados 0,1-0,6 s.
+        if (!falling && force in KNOCK_MIN..JOLT && now - lastKnockSpike > 80) {
+            if (now - lastKnockSpike in 100..600 && now - lastKnock > 2000 && now - lastShake > 1500) {
+                lastKnock = now
+                MoodEngine.onKnock()
+            }
+            lastKnockSpike = now
         }
 
         if (force > JOLT && (jolts.isEmpty() || now - jolts.last() > 80)) {

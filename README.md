@@ -25,6 +25,13 @@ Un asistente robot para Android que vive en tu pantalla. Flota sobre cualquier a
 | Asientes / niegas con la cabeza | Asiente feliz / niega un poco triste |
 | Pones el celular boca abajo | Bosteza y se echa una siesta; al levantarlo, despierta |
 | Apagas la luz del cuarto | Le da sueño (ojos a medio cerrar) |
+| Todavía no te ve | Te busca barriendo la mirada; al encontrarte: "¡ahí estás!" |
+| Bostezas | Se le contagia el bostezo |
+| Cierras los ojos un rato | Se adormece contigo |
+| Te acercas mucho | Se echa para atrás, sorprendido |
+| Lo miras fijo | Le da vergüenza y mira para otro lado |
+| Das dos golpecitos al celular ("toc toc") | Se pregunta quién es y mira alrededor |
+| Se te cae o lo lanzas al aire | Grita y aterriza mareado |
 | Tapas la cámara | Se asusta y te busca; al destaparla: "¡te encontré!" |
 | Lo tocas | Se alegra (5 toques seguidos: se enoja) |
 | Lo acaricias (mantener y frotar) | Cierra los ojitos y ronronea |
@@ -36,7 +43,7 @@ Un asistente robot para Android que vive en tu pantalla. Flota sobre cualquier a
 | Lo pones a cargar / batería baja | Se alegra / se pone triste |
 
 Además, dos formas de mostrarse sobre tus apps:
-- **Barra superior** estilo isla: todo el ancho, con los ojos junto a la cámara frontal. La hora y los íconos de Android siguen visibles encima. Arrástrala para cambiar su alto; deslízala rápido hacia arriba para ocultarla.
+- **Isla superior**: vive compacta alrededor de la cámara frontal, dentro de la franja de la hora, para no tapar nada de tus apps. Se expande a una barra de todo el ancho al tocarla, al deslizarla hacia abajo o cuando llega una notificación, y vuelve a encogerse sola. La hora y los íconos de Android siguen visibles encima.
 - **Burbuja flotante** que se arrastra, se lanza, se pega a los bordes, se agranda con un pellizco y se cierra soltándola sobre una X.
 
 Y un **modo noche** a pantalla completa con brillo mínimo y protección contra quemado de pantalla OLED.
@@ -78,6 +85,7 @@ Permisos que pide: **Mostrar sobre otras apps** (burbuja), **Cámara** (mirada),
 
 - [x] v0.1: cara animada, burbuja, modo noche, cerebro de emociones, cámara, sensores y sonidos
 - [x] v0.2: bienvenida guiada, preferencias guardadas, posición de la burbuja, vuelve tras reiniciar, boca abajo = siesta, luz del cuarto, boca abierta, sí/no con la cabeza, transiciones con personalidad, modo ahorro de cámara
+- [x] v0.3: detección estable (filtros de tiempo), isla compacta que se expande, animación de búsqueda, 7 acciones nuevas
 - [ ] Voz y cerebro con Claude
 - [ ] Recordatorios y tareas
 - [ ] Leer y responder mensajes (con confirmación)

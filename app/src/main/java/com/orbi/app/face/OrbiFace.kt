@@ -2,6 +2,7 @@ package com.orbi.app.face
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationSpec
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.VectorConverter
@@ -132,6 +133,7 @@ private val NO_BLINK = setOf(
  * @param headTilt inclinación de la cara en grados (imita la de tu cabeza).
  * @param winkSide qué ojo cierra en el guiño: -1 izquierdo, 1 derecho.
  * @param cue movimiento de cabeza que se dispara una vez (asentir o negar).
+ * @param searching te está buscando con la cámara: barre la mirada de lado a lado, concentrado.
  */
 @Composable
 fun OrbiFace(
@@ -143,6 +145,7 @@ fun OrbiFace(
     headTilt: Float = 0f,
     winkSide: Int = 1,
     cue: Cue? = null,
+    searching: Boolean = false,
     color: Color = Color.White,
 ) {
     val eye = eyeFor(expression)
@@ -154,8 +157,10 @@ fun OrbiFace(
     val eyeR by animateFloatAsState(eye.radius, spec, label = "eyeR")
     val tilt by animateFloatAsState(eye.tilt, spec, label = "tilt")
     val cut by animateFloatAsState(eye.cutBottom, spec, label = "cut")
-    // El párpado baja lento (sueño) y sube más rápido.
-    val cutTop by animateFloatAsState(eye.cutTop, tween(if (eye.cutTop > 0f) 700 else 250), label = "cutTop")
+    // El párpado baja lento (sueño) y sube más rápido. Buscando, entrecierra un poco (concentrado).
+    val isSearching = searching && expression == Expression.NEUTRAL
+    val lidTarget = maxOf(eye.cutTop, if (isSearching) 0.18f else 0f)
+    val cutTop by animateFloatAsState(lidTarget, tween(if (lidTarget > 0f) 700 else 250), label = "cutTop")
     val mouthW by animateFloatAsState(mouth.w, spec, label = "mouthW")
     val curve by animateFloatAsState(mouth.curve, spec, label = "curve")
     val open by animateFloatAsState(mouth.open, spec, label = "open")
@@ -225,7 +230,18 @@ fun OrbiFace(
 
     // Miradas de reojo cuando está tranquilo (o nervioso, si está asustado).
     val glance = remember { Animatable(Offset.Zero, Offset.VectorConverter) }
-    LaunchedEffect(expression, idleGlances) {
+    LaunchedEffect(expression, idleGlances, isSearching) {
+        if (isSearching) {
+            // Búsqueda: barre de un lado al otro, como un radar, y a veces se asoma arriba o abajo.
+            var sweep = 0
+            while (true) {
+                val side = if (sweep % 2 == 0) 1f else -1f
+                val peek = when (sweep % 5) { 2 -> -0.8f; 4 -> 0.6f; else -> -0.15f }
+                glance.animateTo(Offset(side, peek), tween(850, easing = FastOutSlowInEasing))
+                delay(Random.nextLong(250, 600))
+                sweep++
+            }
+        }
         if (!idleGlances || expression == Expression.SLEEPING || expression == Expression.DIZZY) {
             glance.animateTo(Offset.Zero, tween(300))
             return@LaunchedEffect
